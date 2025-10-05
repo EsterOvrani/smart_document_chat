@@ -167,11 +167,11 @@ const Register = () => {
 
     try {
       const response = await authAPI.register({
-        username: formData.username.trim(),
-        email: formData.email.trim(),
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
-        password: formData.password
+        email: formData.email.trim(),
+        password: formData.password,
+        username: formData.username.trim()
       });
 
       if (response.data.success) {
