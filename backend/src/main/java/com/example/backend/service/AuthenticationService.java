@@ -145,4 +145,13 @@ public class AuthenticationService {
     public boolean emailExists(String email) {
         return userRepository.findByEmail(email).isPresent();
     }
+
+
+    public boolean isEmailVerified(String email) {
+        Optional<User> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isPresent()) {
+            return optionalUser.get().isEnabled();
+        }
+        throw new RuntimeException("User not found");
+    }
 }

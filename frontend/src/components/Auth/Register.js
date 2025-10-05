@@ -163,6 +163,22 @@ const Register = () => {
       return;
     }
 
+    // בדוק שכל הvalidations עברו
+    if (validations.username && !validations.username.valid) {
+      setAlert({ message: 'שם המשתמש לא תקין או תפוס', type: 'error' });
+      return;
+    }
+
+    if (validations.email && !validations.email.valid) {
+      setAlert({ message: 'כתובת המייל לא תקינה או תפוסה', type: 'error' });
+      return;
+    }
+
+    if (validations.password && !validations.password.valid) {
+      setAlert({ message: 'הסיסמה לא עומדת בדרישות', type: 'error' });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -175,11 +191,12 @@ const Register = () => {
       });
 
       if (response.data.success) {
-        setAlert({ message: 'רישום בוצע בהצלחה! מעביר לדף ההתחברות...', type: 'success' });
+        setAlert({ message: 'רישום בוצע בהצלחה! מעביר לדף אימות...', type: 'success' });
         
         setTimeout(() => {
-          navigate('/login?msg=' + encodeURIComponent('רישום בוצע בהצלחה! אנא התחבר'));
-        }, 2000);
+          // העבר לדף אימות עם המייל במצב המתנה
+          navigate('/verify?email=' + encodeURIComponent(formData.email.trim()) + '&mode=wait');
+        }, 1500);
       } else {
         setAlert({ message: response.data.error || 'שגיאה ברישום המשתמש', type: 'error' });
       }

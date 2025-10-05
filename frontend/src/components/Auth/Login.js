@@ -14,10 +14,21 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  React.useEffect(() => {
+React.useEffect(() => {
     const params = new URLSearchParams(location.search);
     const msg = params.get('msg');
-    if (msg) {
+    const verified = params.get('verified');
+    const errorParam = params.get('error');
+    
+    if (verified === 'true') {
+      setSuccessMsg('✅ המייל אומת בהצלחה! כעת תוכל להתחבר למערכת');
+      // נקה את ה-URL
+      window.history.replaceState({}, '', '/login');
+    } else if (verified === 'false') {
+      setError('❌ אימות המייל נכשל: ' + (errorParam || 'קוד לא תקין או פג תוקף'));
+      // נקה את ה-URL
+      window.history.replaceState({}, '', '/login');
+    } else if (msg) {
       setSuccessMsg(msg);
     }
   }, [location]);

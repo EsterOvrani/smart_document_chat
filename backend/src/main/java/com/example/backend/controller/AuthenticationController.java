@@ -17,7 +17,7 @@ import java.util.Map;
 
 @RequestMapping("/auth")
 @RestController
-@CrossOrigin(origins = "*")
+// ← הסרתי את @CrossOrigin מכאן!
 public class AuthenticationController {
     private final JwtService jwtService;
     private final AuthenticationService authenticationService;
@@ -27,19 +27,53 @@ public class AuthenticationController {
         this.authenticationService = authenticationService;
     }
 
-    @PostMapping({"/signup", "/register"})  // שני paths לאותה מתודה
-    public ResponseEntity<User> register(@RequestBody RegisterUserDto registerUserDto) {
-        User registeredUser = authenticationService.signup(registerUserDto);
-        return ResponseEntity.ok(registeredUser);
+    @PostMapping({"/signup", "/register"})
+    public ResponseEntity<Map<String, Object>> register(@RequestBody RegisterUserDto registerUserDto) {
+        try {
+            User registeredUser = authenticationService.signup(registerUserDto);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "User registered successfully. Please check your email for verification code.");
+            response.put("user", Map.of(
+                "id", registeredUser.getId(),
+                "username", registeredUser.getUsername(),
+                "email", registeredUser.getEmail()
+            ));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
     }
+    
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> authenticate(@RequestBody LoginUserDto loginUserDto){
-        User authenticatedUser = authenticationService.authenticate(loginUserDto);
-        String jwtToken = jwtService.generateToken(authenticatedUser);
-        LoginResponse loginResponse = new LoginResponse(jwtToken, jwtService.getExpirationTime());
-        return ResponseEntity.ok(loginResponse);
+    public ResponseEntity<Map<String, Object>> authenticate(@RequestBody LoginUserDto loginUserDto){
+        try {
+            User authenticatedUser = authenticationService.authenticate(loginUserDto);
+            String jwtToken = jwtService.generateToken(authenticatedUser);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("token", jwtToken);
+            response.put("expiresIn", jwtService.getExpirationTime());
+            response.put("user", Map.of(
+                "username", authenticatedUser.getUsername(),
+                "email", authenticatedUser.getEmail(),
+                "fullName", authenticatedUser.getFirstName() + " " + authenticatedUser.getLastName()
+            ));
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
     }
 
+    // ✅ POST endpoint - לאימות ידני עם קוד
     @PostMapping("/verify")
     public ResponseEntity<Map<String, Object>> verifyUser(@RequestBody VerifyUserDto verifyUserDto) {
         try {
@@ -53,6 +87,30 @@ public class AuthenticationController {
             response.put("success", false);
             response.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    // ✅ GET endpoint - לאימות דרך קישור במייל
+    @GetMapping("/verify")
+    public ResponseEntity<String> verifyUserByLink(
+            @RequestParam String email, 
+            @RequestParam String code) {
+        try {
+            VerifyUserDto verifyUserDto = new VerifyUserDto();
+            verifyUserDto.setEmail(email);
+            verifyUserDto.setVerificationCode(code);
+            
+            authenticationService.verifyUser(verifyUserDto);
+            
+            // הפנה לעמוד התחברות עם הודעת הצלחה
+            return ResponseEntity.status(302)
+                    .header("Location", "/login?verified=true")
+                    .build();
+        } catch (RuntimeException e) {
+            // הפנה לעמוד שגיאה
+            return ResponseEntity.status(302)
+                    .header("Location", "/login?verified=false&error=" + e.getMessage())
+                    .build();
         }
     }
 
@@ -72,7 +130,6 @@ public class AuthenticationController {
         }
     }
 
-    // ✅ Check username availability
     @GetMapping("/check-username/{username}")
     public ResponseEntity<Map<String, Object>> checkUsername(@PathVariable String username) {
         Map<String, Object> response = new HashMap<>();
@@ -81,7 +138,6 @@ public class AuthenticationController {
         return ResponseEntity.ok(response);
     }
 
-    // ✅ Check email availability
     @GetMapping("/check-email/{email}")
     public ResponseEntity<Map<String, Object>> checkEmail(@PathVariable String email) {
         Map<String, Object> response = new HashMap<>();
@@ -90,7 +146,6 @@ public class AuthenticationController {
         return ResponseEntity.ok(response);
     }
 
-    // ✅ Check authentication status
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> checkStatus() {
         Map<String, Object> response = new HashMap<>();
@@ -115,7 +170,6 @@ public class AuthenticationController {
         return ResponseEntity.ok(response);
     }
 
-    // ✅ Logout
     @PostMapping("/logout")
     public ResponseEntity<Map<String, Object>> logout() {
         SecurityContextHolder.clearContext();

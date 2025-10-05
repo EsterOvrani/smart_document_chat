@@ -40,8 +40,13 @@ api.interceptors.response.use(
 // Authentication API
 export const authAPI = {
   checkStatus: () => api.get('/auth/status'),
-  login: (email, password) => api.post('/auth/login', { email, password }),  // ← תוקן
+  login: (email, password) => api.post('/auth/login', { email, password }),
   register: (userData) => api.post('/auth/signup', userData),
+  verify: (data) => api.post('/auth/verify', data),
+  checkIfVerified: (email) => api.get(`/auth/check-verified/${encodeURIComponent(email)}`),
+  resendVerificationCode: (email) => api.post('/auth/resend', null, { 
+    params: { email } 
+  }),
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
