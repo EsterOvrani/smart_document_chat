@@ -1,7 +1,7 @@
-package com.example.backend.controller;
+package com.example.backend.user.controller;
 
-import com.example.backend.model.User;
-import com.example.backend.service.UserService;
+import com.example.backend.user.model.User;
+import com.example.backend.user.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
