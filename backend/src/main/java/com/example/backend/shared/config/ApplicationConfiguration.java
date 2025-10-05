@@ -1,7 +1,7 @@
-package com.example.backend.config;
+package com.example.backend.shared.config;
 
 
-import com.example.backend.repository.UserRepository;
+import com.example.backend.user.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;

@@ -1,10 +1,11 @@
-package com.example.backend.service;
+package com.example.backend.auth.service;
 
-import com.example.backend.dto.LoginUserDto;
-import com.example.backend.dto.RegisterUserDto;
-import com.example.backend.dto.VerifyUserDto;
-import com.example.backend.model.User;
-import com.example.backend.repository.UserRepository;
+import com.example.backend.auth.dto.LoginUserDto;
+import com.example.backend.auth.dto.RegisterUserDto;
+import com.example.backend.auth.dto.VerifyUserDto;
+import com.example.backend.user.model.User;
+import com.example.backend.user.repository.UserRepository;
+import com.example.backend.user.service.EmailService;
 import jakarta.mail.MessagingException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -37,22 +38,18 @@ public class AuthenticationService {
     public User signup(RegisterUserDto input) {
         User user = new User();
 
-        // הגדר את כל השדות
         user.setUsername(input.getUsername());
         user.setEmail(input.getEmail());
         user.setPassword(passwordEncoder.encode(input.getPassword()));
-        user.setFirstName(input.getFirstName());  // ← הוסף
-        user.setLastName(input.getLastName());    // ← הוסף
+        user.setFirstName(input.getFirstName());
+        user.setLastName(input.getLastName());
 
-        // הגדר verification
         user.setVerificationCode(generateVerificationCode());
         user.setVerificationCodeExpiresAt(LocalDateTime.now().plusMinutes(15));
         user.setEnabled(false);
 
-        // שלח מייל
         sendVerificationEmail(user);
 
-        // שמור
         return userRepository.save(user);
     }
 
@@ -109,7 +106,15 @@ public class AuthenticationService {
         }
     }
 
-    private void sendVerificationEmail(User user) { //TODO: Update with company logo
+    public boolean isEmailVerified(String email) {
+        Optional<User> optionalUser = userRepository.findByEmail(email);
+        if (optionalUser.isPresent()) {
+            return optionalUser.get().isEnabled();
+        }
+        throw new RuntimeException("User not found");
+    }
+
+    private void sendVerificationEmail(User user) {
         String subject = "Account Verification";
         String verificationCode = "VERIFICATION CODE " + user.getVerificationCode();
         String htmlMessage = "<html>"
@@ -128,10 +133,10 @@ public class AuthenticationService {
         try {
             emailService.sendVerificationEmail(user.getEmail(), subject, htmlMessage);
         } catch (MessagingException e) {
-            // Handle email sending exception
             e.printStackTrace();
         }
     }
+
     private String generateVerificationCode() {
         Random random = new Random();
         int code = random.nextInt(900000) + 100000;
@@ -144,14 +149,5 @@ public class AuthenticationService {
 
     public boolean emailExists(String email) {
         return userRepository.findByEmail(email).isPresent();
-    }
-
-
-    public boolean isEmailVerified(String email) {
-        Optional<User> optionalUser = userRepository.findByEmail(email);
-        if (optionalUser.isPresent()) {
-            return optionalUser.get().isEnabled();
-        }
-        throw new RuntimeException("User not found");
     }
 }

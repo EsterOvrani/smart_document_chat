@@ -1,12 +1,12 @@
-package com.example.backend.controller;
+package com.example.backend.auth.controller;
 
-import com.example.backend.dto.LoginUserDto;
-import com.example.backend.dto.RegisterUserDto;
-import com.example.backend.dto.VerifyUserDto;
-import com.example.backend.model.User;
-import com.example.backend.responses.LoginResponse;
-import com.example.backend.service.AuthenticationService;
-import com.example.backend.service.JwtService;
+import com.example.backend.auth.dto.LoginUserDto;
+import com.example.backend.auth.dto.RegisterUserDto;
+import com.example.backend.auth.dto.VerifyUserDto;
+import com.example.backend.auth.service.AuthenticationService;
+import com.example.backend.auth.service.JwtService;
+import com.example.backend.user.model.User;
+import com.example.backend.shared.responses.LoginResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,7 +17,6 @@ import java.util.Map;
 
 @RequestMapping("/auth")
 @RestController
-// ← הסרתי את @CrossOrigin מכאן!
 public class AuthenticationController {
     private final JwtService jwtService;
     private final AuthenticationService authenticationService;
@@ -73,7 +72,6 @@ public class AuthenticationController {
         }
     }
 
-    // ✅ POST endpoint - לאימות ידני עם קוד
     @PostMapping("/verify")
     public ResponseEntity<Map<String, Object>> verifyUser(@RequestBody VerifyUserDto verifyUserDto) {
         try {
@@ -90,7 +88,6 @@ public class AuthenticationController {
         }
     }
 
-    // ✅ GET endpoint - לאימות דרך קישור במייל
     @GetMapping("/verify")
     public ResponseEntity<String> verifyUserByLink(
             @RequestParam String email, 
@@ -102,12 +99,10 @@ public class AuthenticationController {
             
             authenticationService.verifyUser(verifyUserDto);
             
-            // הפנה לעמוד התחברות עם הודעת הצלחה
             return ResponseEntity.status(302)
                     .header("Location", "/login?verified=true")
                     .build();
         } catch (RuntimeException e) {
-            // הפנה לעמוד שגיאה
             return ResponseEntity.status(302)
                     .header("Location", "/login?verified=false&error=" + e.getMessage())
                     .build();
@@ -144,6 +139,21 @@ public class AuthenticationController {
         boolean exists = authenticationService.emailExists(email);
         response.put("available", !exists);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/check-verified/{email}")
+    public ResponseEntity<Map<String, Object>> checkIfVerified(@PathVariable String email) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            boolean verified = authenticationService.isEmailVerified(email);
+            response.put("verified", verified);
+            response.put("email", email);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("verified", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.ok(response);
+        }
     }
 
     @GetMapping("/status")
