@@ -1,23 +1,34 @@
 // src/services/api.js
 import axios from 'axios';
 
-// ה-API URL יהיה יחסי - NGINX ינתב את /api/* לשרת
 const API_BASE_URL = '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // חשוב לשליחת cookies
   headers: {
     'Content-Type': 'application/json'
   }
 });
+
+// Interceptor - הוסף טוקן לכל בקשה
+api.interceptors.request.use(
+  config => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  error => Promise.reject(error)
+);
 
 // Interceptor לטיפול בשגיאות
 api.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
-      // Redirect to login only if not already on login page
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
@@ -29,14 +40,18 @@ api.interceptors.response.use(
 // Authentication API
 export const authAPI = {
   checkStatus: () => api.get('/auth/status'),
-  login: (username, password) => api.post('/auth/login', { username, password }),
-  register: (userData) => api.post('/auth/register', userData),
-  logout: () => api.post('/auth/logout'),
+  login: (email, password) => api.post('/auth/login', { email, password }),  // ← תוקן
+  register: (userData) => api.post('/auth/signup', userData),
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    return api.post('/auth/logout');
+  },
   checkUsername: (username) => api.get(`/auth/check-username/${encodeURIComponent(username)}`),
   checkEmail: (email) => api.get(`/auth/check-email/${encodeURIComponent(email)}`)
 };
 
-// Sessions API
+// Sessions API (ללא שינוי)
 export const sessionsAPI = {
   getAll: () => api.get('/sessions'),
   getOne: (id) => api.get(`/sessions/${id}`),

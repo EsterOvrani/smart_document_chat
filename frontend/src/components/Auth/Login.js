@@ -5,7 +5,7 @@ import { authAPI } from '../../services/api';
 import './Login.css';
 
 const Login = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');  // ← שינוי מ-username
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -14,7 +14,6 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // קבלת הודעת הצלחה מה-URL (אחרי רישום)
   React.useEffect(() => {
     const params = new URLSearchParams(location.search);
     const msg = params.get('msg');
@@ -29,9 +28,13 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const response = await authAPI.login(username, password);
+      const response = await authAPI.login(email, password);  // ← שינוי
       
       if (response.data.success) {
+        // שמור את הטוקן ב-localStorage
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        
         navigate('/');
       } else {
         setError(response.data.error || 'שגיאה בהתחברות');
@@ -62,14 +65,14 @@ const Login = () => {
           <div className="alert alert-success">{successMsg}</div>
         )}
 
-        <form onSubmit={handleSubmit} id="loginForm">
+        <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="username">שם משתמש או אימייל:</label>
+            <label htmlFor="email">אימייל:</label>
             <input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
               disabled={loading}
             />
@@ -91,17 +94,9 @@ const Login = () => {
             type="submit" 
             className="login-btn"
             disabled={loading}
-            style={{ display: loading ? 'none' : 'block' }}
           >
-            התחבר
+            {loading ? 'מתחבר...' : 'התחבר'}
           </button>
-
-          {loading && (
-            <div className="loading">
-              <div className="spinner"></div>
-              <p>מתחבר...</p>
-            </div>
-          )}
         </form>
 
         <div className="register-link">
