@@ -20,7 +20,7 @@ public class EmailService {
         MimeMessage message = emailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-        // יצירת קישור האימות
+        // ✅ יצירת קישור האימות - רק עם הקוד המספרי!
         String verificationLink = frontendUrl + "/verify?email=" + to + "&code=" + verificationCode;
 
         String htmlMessage = "<!DOCTYPE html>" +
@@ -39,7 +39,7 @@ public class EmailService {
                 ".footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #e1e8ed; }" +
                 ".divider { margin: 30px 0; text-align: center; color: #999; }" +
                 ".code-box { background-color: #f8f9ff; border: 2px dashed #667eea; border-radius: 8px; padding: 20px; margin: 20px 0; }" +
-                ".code-box .code { font-size: 24px; font-weight: bold; color: #667eea; letter-spacing: 3px; }" +
+                ".code-box .code { font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 8px; font-family: monospace; }" +
                 "</style>" +
                 "</head>" +
                 "<body>" +

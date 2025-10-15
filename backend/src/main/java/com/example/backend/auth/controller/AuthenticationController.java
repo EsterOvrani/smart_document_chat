@@ -6,7 +6,6 @@ import com.example.backend.auth.dto.VerifyUserDto;
 import com.example.backend.auth.service.AuthenticationService;
 import com.example.backend.auth.service.JwtService;
 import com.example.backend.user.model.User;
-import com.example.backend.shared.responses.LoginResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -159,25 +158,41 @@ public class AuthenticationController {
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> checkStatus() {
         Map<String, Object> response = new HashMap<>();
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         
-        if (authentication != null && authentication.isAuthenticated() && 
-            !authentication.getPrincipal().equals("anonymousUser")) {
-            User user = (User) authentication.getPrincipal();
-            response.put("success", true);
-            response.put("authenticated", true);
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             
-            Map<String, Object> userInfo = new HashMap<>();
-            userInfo.put("username", user.getUsername());
-            userInfo.put("email", user.getEmail());
-            userInfo.put("fullName", user.getFirstName() + " " + user.getLastName());
-            response.put("user", userInfo);
-        } else {
-            response.put("success", true);
+            // ✅ בדיקה מדויקת יותר
+            if (authentication != null && 
+                authentication.isAuthenticated() && 
+                authentication.getPrincipal() instanceof User) {
+                
+                User user = (User) authentication.getPrincipal();
+                
+                response.put("success", true);
+                response.put("authenticated", true);
+                
+                Map<String, Object> userInfo = new HashMap<>();
+                userInfo.put("username", user.getUsername());
+                userInfo.put("email", user.getEmail());
+                userInfo.put("fullName", user.getFirstName() + " " + user.getLastName());
+                response.put("user", userInfo);
+                
+                // ✅ CRITICAL: חייב להחזיר ResponseEntity!
+                return ResponseEntity.ok(response);
+            } else {
+                // משתמש לא מחובר
+                response.put("success", true);
+                response.put("authenticated", false);
+                return ResponseEntity.ok(response);
+            }
+        } catch (Exception e) {
+            // במקרה של שגיאה
+            response.put("success", false);
             response.put("authenticated", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.ok(response);
         }
-        
-        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/logout")
