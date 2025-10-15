@@ -32,11 +32,14 @@ public class SecurityConfiguration {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // ← הוסף את זה!
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authorize -> authorize
+                        // ✅ נתיבים ציבוריים (ללא אימות)
                         .requestMatchers("/auth/**").permitAll()
-                        .requestMatchers("/error").permitAll() // ← הוסף גם את זה
+                        .requestMatchers("/error").permitAll()
+                        
+                        // ✅ כל השאר דורש אימות
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
@@ -52,19 +55,10 @@ public class SecurityConfiguration {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // ✅ אפשר גישה מכל מקור (לפיתוח)
         configuration.setAllowedOriginPatterns(Arrays.asList("*"));
-        
-        // ✅ אפשר את כל ה-methods
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        
-        // ✅ אפשר את כל ה-headers
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        
-        // ✅ אפשר credentials
         configuration.setAllowCredentials(true);
-        
-        // ✅ אפשר expose של headers
         configuration.setExposedHeaders(Arrays.asList("Authorization"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

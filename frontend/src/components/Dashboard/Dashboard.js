@@ -1,7 +1,7 @@
 // src/components/Dashboard/Dashboard.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authAPI, sessionsAPI } from '../../services/api';
+import { authAPI } from '../../services/api';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
 import NewSessionModal from './NewSessionModal';
@@ -23,7 +23,8 @@ const Dashboard = () => {
 
   useEffect(() => {
     checkAuth();
-    loadSessions();
+    // TODO: בעתיד להחזיר את loadSessions() כשיהיה SessionController
+    // loadSessions();
   }, []);
 
   const checkAuth = async () => {
@@ -52,18 +53,22 @@ const Dashboard = () => {
     }
   };
 
+  // TODO: Session Management - להטמיע בעתיד כשיהיה SessionController
   const loadSessions = async () => {
-    try {
-      const response = await sessionsAPI.getAll();
-      if (response.data.success) {
-        setSessions(response.data.sessions);
-      } else {
-        showToast('שגיאה בטעינת שיחות', 'error');
-      }
-    } catch (error) {
-      console.error('Error loading sessions:', error);
-      showToast('שגיאה בחיבור לשרת', 'error');
-    }
+    // try {
+    //   const response = await sessionsAPI.getAll();
+    //   if (response.data.success) {
+    //     setSessions(response.data.sessions);
+    //   } else {
+    //     showToast('שגיאה בטעינת שיחות', 'error');
+    //   }
+    // } catch (error) {
+    //   console.error('Error loading sessions:', error);
+    //   showToast('שגיאה בחיבור לשרת', 'error');
+    // }
+    
+    console.log('TODO: loadSessions - יוטמע כשיהיה SessionController');
+    setSessions([]); // רשימה ריקה זמנית
   };
 
   const createNewSession = () => {
@@ -76,9 +81,16 @@ const Dashboard = () => {
       return;
     }
 
+    // TODO: להטמיע יצירת session בעתיד
+    console.log('TODO: submitNewSession - יוטמע כשיהיה SessionController', { title, description });
+    
+    // זמנית - סגור את המודל והצג הודעה
+    setShowNewSessionModal(false);
+    showToast('⚠️ יצירת שיחה תהיה זמינה בקרוב', 'error');
+    
+    /* קוד לעתיד:
     try {
       const response = await sessionsAPI.create({ title, description });
-
       if (response.data.success) {
         setShowNewSessionModal(false);
         showToast('שיחה חדשה נוצרה בהצלחה', 'success');
@@ -91,12 +103,16 @@ const Dashboard = () => {
       console.error('Error creating session:', error);
       showToast('שגיאה ביצירת שיחה', 'error');
     }
+    */
   };
 
   const loadSession = async (sessionId) => {
+    // TODO: להטמיע בעתיד
+    console.log('TODO: loadSession - יוטמע כשיהיה SessionController', sessionId);
+    
+    /* קוד לעתיד:
     try {
       const response = await sessionsAPI.getOne(sessionId);
-
       if (response.data.success) {
         setCurrentSession(response.data.session);
         setMessages([]);
@@ -108,15 +124,19 @@ const Dashboard = () => {
       console.error('Error loading session:', error);
       showToast('שגיאה בטעינת שיחה', 'error');
     }
+    */
   };
 
   const deleteSession = async (sessionId, e) => {
     if (e) e.stopPropagation();
     if (!window.confirm('האם אתה בטוח שברצונך למחוק שיחה זו?')) return;
 
+    // TODO: להטמיע בעתיד
+    console.log('TODO: deleteSession - יוטמע כשיהיה SessionController', sessionId);
+    
+    /* קוד לעתיד:
     try {
       const response = await sessionsAPI.delete(sessionId);
-
       if (response.data.success) {
         showToast('שיחה נמחקה בהצלחה', 'success');
         if (currentSession && currentSession.id === sessionId) {
@@ -131,6 +151,7 @@ const Dashboard = () => {
       console.error('Error deleting session:', error);
       showToast('שגיאה במחיקת שיחה', 'error');
     }
+    */
   };
 
   const handleFileUpload = async (e) => {
@@ -159,14 +180,17 @@ const Dashboard = () => {
   };
 
   const uploadFile = async (file) => {
+    // TODO: להטמיע בעתיד
+    console.log('TODO: uploadFile - יוטמע כשיהיה SessionController', file.name);
+    showToast('⚠️ העלאת מסמכים תהיה זמינה בקרוב', 'error');
+    
+    /* קוד לעתיד:
     const formData = new FormData();
     formData.append('file', file);
-
     showToast(`מעלה ${file.name}...`, 'success');
 
     try {
       const response = await sessionsAPI.uploadDocument(currentSession.id, formData);
-
       if (response.data.success) {
         showToast(`${file.name} הועלה בהצלחה`, 'success');
         setUploadedFiles(prev => [...prev, {
@@ -181,6 +205,7 @@ const Dashboard = () => {
       console.error('Error uploading file:', error);
       showToast('שגיאה בהעלאת קובץ', 'error');
     }
+    */
   };
 
   const removeUploadedFile = (documentId) => {
@@ -198,6 +223,12 @@ const Dashboard = () => {
       return false;
     }
 
+    // TODO: להטמיע בעתיד
+    console.log('TODO: sendMessage - יוטמע כשיהיה SessionController', text);
+    showToast('⚠️ שליחת הודעות תהיה זמינה בקרוב', 'error');
+    return false;
+    
+    /* קוד לעתיד:
     const userMessage = {
       role: 'user',
       content: text,
@@ -230,14 +261,19 @@ const Dashboard = () => {
       showToast('שגיאה בשליחת הודעה', 'error');
       return false;
     }
+    */
   };
 
   const showDocuments = async () => {
     if (!currentSession) return;
 
+    // TODO: להטמיע בעתיד
+    console.log('TODO: showDocuments - יוטמע כשיהיה SessionController');
+    showToast('⚠️ תצוגת מסמכים תהיה זמינה בקרוב', 'error');
+    
+    /* קוד לעתיד:
     try {
       const response = await sessionsAPI.getDocuments(currentSession.id);
-
       if (response.data.success) {
         setDocuments(response.data.documents);
         setShowDocumentsModal(true);
@@ -248,14 +284,18 @@ const Dashboard = () => {
       console.error('Error loading documents:', error);
       showToast('שגיאה בטעינת מסמכים', 'error');
     }
+    */
   };
 
   const deleteDocument = async (documentId) => {
     if (!window.confirm('האם אתה בטוח שברצונך למחוק מסמך זה?')) return;
 
+    // TODO: להטמיע בעתיד
+    console.log('TODO: deleteDocument - יוטמע כשיהיה SessionController', documentId);
+    
+    /* קוד לעתיד:
     try {
       const response = await sessionsAPI.deleteDocument(currentSession.id, documentId);
-
       if (response.data.success) {
         showToast('מסמך נמחק בהצלחה', 'success');
         setShowDocumentsModal(false);
@@ -267,6 +307,7 @@ const Dashboard = () => {
       console.error('Error deleting document:', error);
       showToast('שגיאה במחיקת מסמך', 'error');
     }
+    */
   };
 
   const showToast = (message, type = 'success') => {
