@@ -1,14 +1,16 @@
-version: '3.3'
+version: '3.8'
+
 services:
+  # ==================== PostgreSQL ====================
   postgres:
     image: postgres:15-alpine
-    container_name: postgres-db
+    container_name: postgres-smart-doc-chat
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: smartdocumentchat
       POSTGRES_USER: smartdoc_user
       POSTGRES_PASSWORD: smartdoc_password
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,52 +21,121 @@ services:
     networks:
       - app-network
 
+  # ==================== Qdrant Vector Database ====================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-smart-doc-chat
+    ports:
+      - "6333:6333"      # REST API
+      - "6334:6334"      # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # ==================== MinIO Object Storage ====================
+  minio:
+    image: minio/minio:latest
+    container_name: minio-smart-doc-chat
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console port
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  # ==================== Backend (Spring Boot) ====================
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: spring-security-backend
+    container_name: spring-backend
     env_file:
       - ./backend/.env
     environment:
+      # Database
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdocumentchat
       SPRING_DATASOURCE_USERNAME: smartdoc_user
       SPRING_DATASOURCE_PASSWORD: smartdoc_password
+      
+      # Qdrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6334
+      
+      # MinIO
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      
+      # Frontend URL (for emails)
+      FRONTEND_URL: http://localhost
     ports:
       - "8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_healthy
     networks:
       - app-network
+    restart: unless-stopped
 
+  # ==================== Frontend (React) ====================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: spring-security-frontend
+    container_name: react-frontend
     ports:
       - "3000:3000"
     depends_on:
       - backend
     networks:
       - app-network
+    restart: unless-stopped
 
+  # ==================== Nginx (Reverse Proxy) ====================
   nginx:
     image: nginx:alpine
-    container_name: spring-security-nginx
+    container_name: nginx-proxy
     ports:
       - "80:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
       - frontend
     networks:
       - app-network
+    restart: unless-stopped
 
+# ==================== Networks ====================
 networks:
   app-network:
     driver: bridge
 
+# ==================== Volumes ====================
 volumes:
   postgres_data:
+    driver: local
+  qdrant_storage:
+    driver: local
+  minio_data:
+    driver: local
