@@ -1,4 +1,4 @@
-// src/services/api.js
+// frontend/src/services/api.js
 import axios from 'axios';
 
 const API_BASE_URL = '/api';
@@ -18,7 +18,6 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // ✅ Debug: הדפס כל בקשה
     console.log('🔵 API Request:', {
       method: config.method.toUpperCase(),
       url: config.url,
@@ -61,107 +60,140 @@ api.interceptors.response.use(
       }
     }
     
-    if (error.response?.status === 403) {
-      console.error('🚫 Forbidden - Check permissions');
-    }
-    
     return Promise.reject(error);
   }
 );
 
-// ✅ Authentication API
+// ==================== Authentication API ====================
 export const authAPI = {
-  checkStatus: () => {
-    console.log('🔍 Checking auth status...');
-    return api.get('/auth/status');
-  },
-  
-  login: (email, password) => {
-    console.log('🔑 Attempting login for:', email);
-    return api.post('/auth/login', { email, password });
-  },
-  
-  register: (userData) => {
-    console.log('📝 Registering user:', userData.email);
-    return api.post('/auth/signup', userData);
-  },
-  
-  verify: (data) => {
-    console.log('✅ Verifying email:', data.email);
-    return api.post('/auth/verify', data);
-  },
-  
-  checkIfVerified: (email) => {
-    return api.get(`/auth/check-verified/${encodeURIComponent(email)}`);
-  },
-  
-  resendVerificationCode: (email) => {
-    return api.post('/auth/resend', null, { params: { email } });
-  },
-  
+  checkStatus: () => api.get('/auth/status'),
+  login: (email, password) => api.post('/auth/login', { email, password }),
+  register: (userData) => api.post('/auth/signup', userData),
+  verify: (data) => api.post('/auth/verify', data),
+  checkIfVerified: (email) => api.get(`/auth/check-verified/${encodeURIComponent(email)}`),
+  resendVerificationCode: (email) => api.post('/auth/resend', null, { params: { email } }),
   logout: () => {
-    console.log('👋 Logging out...');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     return api.post('/auth/logout');
   },
-  
-  checkUsername: (username) => {
-    return api.get(`/auth/check-username/${encodeURIComponent(username)}`);
-  },
-  
-  checkEmail: (email) => {
-    return api.get(`/auth/check-email/${encodeURIComponent(email)}`);
-  }
+  checkUsername: (username) => api.get(`/auth/check-username/${encodeURIComponent(username)}`),
+  checkEmail: (email) => api.get(`/auth/check-email/${encodeURIComponent(email)}`)
 };
 
-// ✅ Sessions API - TODO: להטמיע בעתיד כשיהיה SessionController
-export const sessionsAPI = {
-  // TODO: כל הפונקציות האלה יוטמעו בשלב הבא
-  getAll: () => {
-    console.log('⚠️ TODO: sessionsAPI.getAll - יוטמע בעתיד');
-    return Promise.reject(new Error('Sessions API not implemented yet'));
+// ==================== Chat API (חדש!) ====================
+export const chatAPI = {
+  /**
+   * יצירת שיחה חדשה
+   * @param {string} title - כותרת השיחה
+   * @param {File[]} files - קבצי PDF
+   */
+  createChat: (title, files) => {
+    const formData = new FormData();
+    formData.append('title', title);
+    
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    return api.post('/chats', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
   },
-  
-  getOne: (id) => {
-    console.log('⚠️ TODO: sessionsAPI.getOne - יוטמע בעתיד', id);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
+
+  /**
+   * קבלת כל השיחות
+   */
+  getAllChats: () => api.get('/chats'),
+
+  /**
+   * חיפוש שיחות
+   */
+  searchChats: (searchTerm) => api.get('/chats/search', {
+    params: { q: searchTerm }
+  }),
+
+  /**
+   * קבלת שיחה ספציפית
+   */
+  getChat: (chatId) => api.get(`/chats/${chatId}`),
+
+  /**
+   * עדכון כותרת שיחה
+   */
+  updateChatTitle: (chatId, newTitle) => api.put(`/chats/${chatId}`, {
+    title: newTitle
+  }),
+
+  /**
+   * מחיקת שיחה
+   */
+  deleteChat: (chatId) => api.delete(`/chats/${chatId}`),
+
+  /**
+   * שאילת שאלה
+   */
+  askQuestion: (chatId, question, contextMessageCount = 5) => {
+    return api.post(`/chats/${chatId}/ask`, {
+      question,
+      contextMessageCount,
+      includeFullContext: false
+    });
   },
-  
-  create: (data) => {
-    console.log('⚠️ TODO: sessionsAPI.create - יוטמע בעתיד', data.title);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
+
+  /**
+   * קבלת היסטוריית הודעות
+   */
+  getChatMessages: (chatId) => api.get(`/chats/${chatId}/messages`),
+
+  /**
+   * סטטיסטיקות
+   */
+  getUserStatistics: () => api.get('/chats/statistics')
+};
+
+// ==================== Document API (חדש!) ====================
+export const documentAPI = {
+  /**
+   * קבלת מסמכים של שיחה
+   */
+  getDocumentsByChat: (chatId) => api.get(`/documents/chat/${chatId}`),
+
+  /**
+   * קבלת מסמכים מעובדים בלבד
+   */
+  getProcessedDocuments: (chatId) => api.get(`/documents/chat/${chatId}/processed`),
+
+  /**
+   * קבלת מסמך ספציפי
+   */
+  getDocument: (documentId) => api.get(`/documents/${documentId}`),
+
+  /**
+   * הורדת מסמך
+   */
+  downloadDocument: (documentId) => {
+    return api.get(`/documents/${documentId}/download`, {
+      responseType: 'blob'
+    });
   },
-  
-  update: (id, data) => {
-    console.log('⚠️ TODO: sessionsAPI.update - יוטמע בעתיד', id);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
-  },
-  
-  delete: (id) => {
-    console.log('⚠️ TODO: sessionsAPI.delete - יוטמע בעתיד', id);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
-  },
-  
-  chat: (id, data) => {
-    console.log('⚠️ TODO: sessionsAPI.chat - יוטמע בעתיד', id);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
-  },
-  
-  uploadDocument: (id, formData) => {
-    console.log('⚠️ TODO: sessionsAPI.uploadDocument - יוטמע בעתיד', id);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
-  },
-  
-  getDocuments: (id) => {
-    console.log('⚠️ TODO: sessionsAPI.getDocuments - יוטמע בעתיד', id);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
-  },
-  
-  deleteDocument: (sessionId, docId) => {
-    console.log('⚠️ TODO: sessionsAPI.deleteDocument - יוטמע בעתיד', docId);
-    return Promise.reject(new Error('Sessions API not implemented yet'));
-  }
+
+  /**
+   * קבלת URL זמני להורדה
+   */
+  getDownloadUrl: (documentId) => api.get(`/documents/${documentId}/download-url`),
+
+  /**
+   * מחיקת מסמך
+   */
+  deleteDocument: (documentId) => api.delete(`/documents/${documentId}`),
+
+  /**
+   * סטטיסטיקות מסמכים
+   */
+  getDocumentStatistics: (chatId) => api.get(`/documents/chat/${chatId}/stats`)
 };
 
 export default api;
