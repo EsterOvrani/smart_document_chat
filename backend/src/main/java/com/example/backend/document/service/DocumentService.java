@@ -52,7 +52,8 @@ public class DocumentService {
     private final MinioService minioService;
     private final OpenAIService openAIService;
     private final QdrantService qdrantService;
-    private final ChatService chatService;
+    @Lazy
+    private ChatService chatService;
 
     // ==================== Constants ====================
     
