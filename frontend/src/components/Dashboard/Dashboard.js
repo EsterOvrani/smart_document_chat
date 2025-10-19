@@ -1,7 +1,7 @@
-// src/components/Dashboard/Dashboard.js
+// frontend/src/components/Dashboard/Dashboard.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authAPI } from '../../services/api';
+import { authAPI, chatAPI } from '../../services/api'; // ✅ ייבוא chatAPI
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
 import NewSessionModal from './NewSessionModal';
@@ -15,17 +15,21 @@ const Dashboard = () => {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
-  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
-  const [documents, setDocuments] = useState([]);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
 
   useEffect(() => {
     checkAuth();
-    // TODO: בעתיד להחזיר את loadSessions() כשיהיה SessionController
-    // loadSessions();
   }, []);
+
+  // ✅ כשמשתמש מחובר - טען את השיחות
+  useEffect(() => {
+    if (currentUser) {
+      loadSessions();
+    }
+  }, [currentUser]);
 
   const checkAuth = async () => {
     try {
@@ -53,165 +57,193 @@ const Dashboard = () => {
     }
   };
 
-  // TODO: Session Management - להטמיע בעתיד כשיהיה SessionController
+  // ==================== ✅ טעינת שיחות ====================
   const loadSessions = async () => {
-    // try {
-    //   const response = await sessionsAPI.getAll();
-    //   if (response.data.success) {
-    //     setSessions(response.data.sessions);
-    //   } else {
-    //     showToast('שגיאה בטעינת שיחות', 'error');
-    //   }
-    // } catch (error) {
-    //   console.error('Error loading sessions:', error);
-    //   showToast('שגיאה בחיבור לשרת', 'error');
-    // }
-    
-    console.log('TODO: loadSessions - יוטמע כשיהיה SessionController');
-    setSessions([]); // רשימה ריקה זמנית
+    try {
+      setLoading(true);
+      const response = await chatAPI.getAllChats();
+      
+      if (response.data.success) {
+        // המרת הנתונים לפורמט שהקומפוננטות מצפות לו
+        const chatsData = response.data.data.chats.map(chat => ({
+          id: chat.id,
+          title: chat.title,
+          documentsCount: chat.documentCount,
+          messagesCount: chat.messageCount,
+          lastActivityAt: formatDateTime(chat.lastActivityAt),
+          createdAt: formatDateTime(chat.createdAt),
+          isReady: chat.isReady,
+          status: chat.status
+        }));
+        
+        setSessions(chatsData);
+      } else {
+        showToast('שגיאה בטעינת שיחות', 'error');
+      }
+    } catch (error) {
+      console.error('Error loading sessions:', error);
+      showToast('שגיאה בחיבור לשרת', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // פונקציה לפורמט תאריך
+  const formatDateTime = (dateTimeString) => {
+    if (!dateTimeString) return '';
+    
+    const date = new Date(dateTimeString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'עכשיו';
+    if (diffMins < 60) return `לפני ${diffMins} דקות`;
+    if (diffHours < 24) return `לפני ${diffHours} שעות`;
+    if (diffDays < 7) return `לפני ${diffDays} ימים`;
+    
+    return date.toLocaleDateString('he-IL');
+  };
+
+  // ==================== ✅ יצירת שיחה חדשה ====================
   const createNewSession = () => {
     setShowNewSessionModal(true);
   };
 
-  const submitNewSession = async (title, description) => {
+  const submitNewSession = async (title, files) => {
     if (!title.trim()) {
       showToast('נא להזין כותרת לשיחה', 'error');
       return;
     }
 
-    // TODO: להטמיע יצירת session בעתיד
-    console.log('TODO: submitNewSession - יוטמע כשיהיה SessionController', { title, description });
-    
-    // זמנית - סגור את המודל והצג הודעה
-    setShowNewSessionModal(false);
-    showToast('⚠️ יצירת שיחה תהיה זמינה בקרוב', 'error');
-    
-    /* קוד לעתיד:
+    if (!files || files.length === 0) {
+      showToast('נא להעלות לפחות קובץ אחד', 'error');
+      return;
+    }
+
     try {
-      const response = await sessionsAPI.create({ title, description });
+      console.log('📤 Creating new chat:', { title, filesCount: files.length });
+      
+      const response = await chatAPI.createChat(title, files);
+      
+      console.log('✅ Chat created:', response.data);
+
       if (response.data.success) {
         setShowNewSessionModal(false);
-        showToast('שיחה חדשה נוצרה בהצלחה', 'success');
+        showToast('✅ שיחה חדשה נוצרה בהצלחה! מעבד מסמכים...', 'success');
+        
+        // טען מחדש את רשימת השיחות
         await loadSessions();
-        await loadSession(response.data.session.id);
+        
+        // טען את השיחה החדשה
+        const newChatId = response.data.chat.id;
+        await loadSession(newChatId);
       } else {
         showToast(response.data.error || 'שגיאה ביצירת שיחה', 'error');
       }
     } catch (error) {
-      console.error('Error creating session:', error);
-      showToast('שגיאה ביצירת שיחה', 'error');
+      console.error('❌ Error creating session:', error);
+      
+      if (error.response?.data?.error) {
+        showToast(error.response.data.error, 'error');
+      } else {
+        showToast('שגיאה ביצירת שיחה', 'error');
+      }
     }
-    */
   };
 
+// ==================== ✅ טעינת שיחה ספציפית ====================
   const loadSession = async (sessionId) => {
-    // TODO: להטמיע בעתיד
-    console.log('TODO: loadSession - יוטמע כשיהיה SessionController', sessionId);
-    
-    /* קוד לעתיד:
     try {
-      const response = await sessionsAPI.getOne(sessionId);
+      setLoading(true);
+      console.log('📥 Loading session:', sessionId);
+      
+      const response = await chatAPI.getChat(sessionId);
+      
       if (response.data.success) {
-        setCurrentSession(response.data.session);
-        setMessages([]);
-        setUploadedFiles([]);
+        const chatData = response.data.data;
+        
+        setCurrentSession({
+          id: chatData.id,
+          title: chatData.title,
+          documentsCount: chatData.documentCount,
+          messagesCount: chatData.messageCount,
+          isReady: chatData.isReady,
+          status: chatData.status
+        });
+        
+        // טען את ההודעות של השיחה
+        await loadMessages(sessionId);
+        
+        showToast('שיחה נטענה בהצלחה', 'success');
       } else {
         showToast(response.data.error || 'שגיאה בטעינת שיחה', 'error');
       }
     } catch (error) {
-      console.error('Error loading session:', error);
+      console.error('❌ Error loading session:', error);
       showToast('שגיאה בטעינת שיחה', 'error');
+    } finally {
+      setLoading(false);
     }
-    */
   };
 
+  // ==================== ✅ טעינת הודעות ====================
+  const loadMessages = async (chatId) => {
+    try {
+      const response = await chatAPI.getChatMessages(chatId);
+      
+      if (response.data.success) {
+        // המרת הפורמט של ההודעות
+        const messagesData = response.data.data.map(msg => ({
+          role: msg.role.toLowerCase(), // USER -> user, ASSISTANT -> assistant
+          content: msg.content,
+          timestamp: msg.createdAt,
+          confidenceScore: msg.confidenceScore,
+          sources: msg.sources
+        }));
+        
+        setMessages(messagesData);
+      }
+    } catch (error) {
+      console.error('❌ Error loading messages:', error);
+      // לא מציגים toast כאן כי זה לא קריטי
+    }
+  };
+
+  // ==================== ✅ מחיקת שיחה ====================
   const deleteSession = async (sessionId, e) => {
     if (e) e.stopPropagation();
+    
     if (!window.confirm('האם אתה בטוח שברצונך למחוק שיחה זו?')) return;
 
-    // TODO: להטמיע בעתיד
-    console.log('TODO: deleteSession - יוטמע כשיהיה SessionController', sessionId);
-    
-    /* קוד לעתיד:
     try {
-      const response = await sessionsAPI.delete(sessionId);
+      console.log('🗑️ Deleting session:', sessionId);
+      
+      const response = await chatAPI.deleteChat(sessionId);
+      
       if (response.data.success) {
-        showToast('שיחה נמחקה בהצלחה', 'success');
+        showToast('✅ שיחה נמחקה בהצלחה', 'success');
+        
+        // אם זו השיחה הנוכחית - נקה אותה
         if (currentSession && currentSession.id === sessionId) {
           setCurrentSession(null);
           setMessages([]);
         }
+        
+        // טען מחדש את רשימת השיחות
         await loadSessions();
       } else {
         showToast(response.data.error || 'שגיאה במחיקת שיחה', 'error');
       }
     } catch (error) {
-      console.error('Error deleting session:', error);
+      console.error('❌ Error deleting session:', error);
       showToast('שגיאה במחיקת שיחה', 'error');
     }
-    */
   };
 
-  const handleFileUpload = async (e) => {
-    if (!currentSession) {
-      showToast('נא לבחור או ליצור שיחה תחילה', 'error');
-      return;
-    }
-
-    const files = Array.from(e.target.files);
-
-    for (const file of files) {
-      if (file.type !== 'application/pdf') {
-        showToast('ניתן להעלות רק קבצי PDF', 'error');
-        continue;
-      }
-
-      if (file.size > 50 * 1024 * 1024) {
-        showToast('גודל קובץ מקסימלי: 50MB', 'error');
-        continue;
-      }
-
-      await uploadFile(file);
-    }
-
-    e.target.value = '';
-  };
-
-  const uploadFile = async (file) => {
-    // TODO: להטמיע בעתיד
-    console.log('TODO: uploadFile - יוטמע כשיהיה SessionController', file.name);
-    showToast('⚠️ העלאת מסמכים תהיה זמינה בקרוב', 'error');
-    
-    /* קוד לעתיד:
-    const formData = new FormData();
-    formData.append('file', file);
-    showToast(`מעלה ${file.name}...`, 'success');
-
-    try {
-      const response = await sessionsAPI.uploadDocument(currentSession.id, formData);
-      if (response.data.success) {
-        showToast(`${file.name} הועלה בהצלחה`, 'success');
-        setUploadedFiles(prev => [...prev, {
-          name: file.name,
-          id: response.data.document.id
-        }]);
-        await loadSession(currentSession.id);
-      } else {
-        showToast(response.data.error || 'שגיאה בהעלאת קובץ', 'error');
-      }
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      showToast('שגיאה בהעלאת קובץ', 'error');
-    }
-    */
-  };
-
-  const removeUploadedFile = (documentId) => {
-    setUploadedFiles(prev => prev.filter(f => f.id !== documentId));
-  };
-
+  // ==================== ✅ שליחת הודעה ====================
   const sendMessage = async (text) => {
     if (!currentSession) {
       showToast('נא לבחור שיחה תחילה', 'error');
@@ -223,93 +255,68 @@ const Dashboard = () => {
       return false;
     }
 
-    // TODO: להטמיע בעתיד
-    console.log('TODO: sendMessage - יוטמע כשיהיה SessionController', text);
-    showToast('⚠️ שליחת הודעות תהיה זמינה בקרוב', 'error');
-    return false;
-    
-    /* קוד לעתיד:
+    // בדיקה אם השיחה מוכנה
+    if (!currentSession.isReady) {
+      showToast('⏳ השיחה עדיין מעבדת מסמכים. אנא המתן...', 'error');
+      return false;
+    }
+
+    // הוסף את הודעת המשתמש מיד (אופטימיסטית)
     const userMessage = {
       role: 'user',
       content: text,
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      const requestBody = { text };
-      if (uploadedFiles.length > 0) {
-        requestBody.documentIds = uploadedFiles.map(f => f.id);
-      }
-
-      const response = await sessionsAPI.chat(currentSession.id, requestBody);
+      console.log('💬 Sending message:', text);
+      
+      const response = await chatAPI.askQuestion(currentSession.id, text);
 
       if (response.data.success) {
+        const answerData = response.data.data;
+        
+        // הוסף את תשובת ה-AI
         const assistantMessage = {
           role: 'assistant',
-          content: response.data.answer,
-          timestamp: new Date()
+          content: answerData.answer,
+          timestamp: answerData.timestamp,
+          confidenceScore: answerData.confidence,
+          sources: answerData.sources
         };
+        
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // אם יש רמת ביטחון נמוכה - הצג אזהרה
+        if (answerData.confidence < 0.5) {
+          showToast('⚠️ רמת ביטחון נמוכה בתשובה', 'warning');
+        }
+        
         return true;
       } else {
+        // הסר את הודעת המשתמש כי נכשל
+        setMessages(prev => prev.filter(msg => msg !== userMessage));
         showToast(response.data.error || 'שגיאה בשליחת הודעה', 'error');
         return false;
       }
     } catch (error) {
-      console.error('Error sending message:', error);
-      showToast('שגיאה בשליחת הודעה', 'error');
+      console.error('❌ Error sending message:', error);
+      
+      // הסר את הודעת המשתמש כי נכשל
+      setMessages(prev => prev.filter(msg => msg !== userMessage));
+      
+      if (error.response?.data?.error) {
+        showToast(error.response.data.error, 'error');
+      } else {
+        showToast('שגיאה בשליחת הודעה', 'error');
+      }
       return false;
     }
-    */
   };
 
-  const showDocuments = async () => {
-    if (!currentSession) return;
-
-    // TODO: להטמיע בעתיד
-    console.log('TODO: showDocuments - יוטמע כשיהיה SessionController');
-    showToast('⚠️ תצוגת מסמכים תהיה זמינה בקרוב', 'error');
-    
-    /* קוד לעתיד:
-    try {
-      const response = await sessionsAPI.getDocuments(currentSession.id);
-      if (response.data.success) {
-        setDocuments(response.data.documents);
-        setShowDocumentsModal(true);
-      } else {
-        showToast(response.data.error || 'שגיאה בטעינת מסמכים', 'error');
-      }
-    } catch (error) {
-      console.error('Error loading documents:', error);
-      showToast('שגיאה בטעינת מסמכים', 'error');
-    }
-    */
-  };
-
-  const deleteDocument = async (documentId) => {
-    if (!window.confirm('האם אתה בטוח שברצונך למחוק מסמך זה?')) return;
-
-    // TODO: להטמיע בעתיד
-    console.log('TODO: deleteDocument - יוטמע כשיהיה SessionController', documentId);
-    
-    /* קוד לעתיד:
-    try {
-      const response = await sessionsAPI.deleteDocument(currentSession.id, documentId);
-      if (response.data.success) {
-        showToast('מסמך נמחק בהצלחה', 'success');
-        setShowDocumentsModal(false);
-        await loadSession(currentSession.id);
-      } else {
-        showToast(response.data.error || 'שגיאה במחיקת מסמך', 'error');
-      }
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      showToast('שגיאה במחיקת מסמך', 'error');
-    }
-    */
-  };
-
+  // ==================== פונקציות עזר ====================
+  
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => {
@@ -318,10 +325,11 @@ const Dashboard = () => {
   };
 
   const filteredSessions = sessions.filter(session =>
-    session.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (session.description && session.description.toLowerCase().includes(searchTerm.toLowerCase()))
+    session.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // ==================== ✅ Render ====================
+  
   return (
     <div className="dashboard">
       <header className="header">
@@ -353,10 +361,10 @@ const Dashboard = () => {
           currentSession={currentSession}
           messages={messages}
           uploadedFiles={uploadedFiles}
-          onFileUpload={handleFileUpload}
-          onRemoveFile={removeUploadedFile}
+          onFileUpload={() => {}} // ✅ לא משתמשים יותר - קבצים רק ביצירה
+          onRemoveFile={() => {}} // ✅ לא משתמשים יותר
           onSendMessage={sendMessage}
-          onShowDocuments={showDocuments}
+          onShowDocuments={() => {}} // נוסיף בשלב הבא
           currentUser={currentUser}
         />
       </div>
@@ -368,65 +376,29 @@ const Dashboard = () => {
         />
       )}
 
-      {showDocumentsModal && (
-        <DocumentsModal
-          documents={documents}
-          onClose={() => setShowDocumentsModal(false)}
-          onDelete={deleteDocument}
-        />
-      )}
-
       {toast.show && (
         <div className={`toast ${toast.type} show`}>
           <span>{toast.message}</span>
         </div>
       )}
-    </div>
-  );
-};
 
-const DocumentsModal = ({ documents, onClose, onDelete }) => {
-  return (
-    <div className="modal active" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
-        <h2 className="modal-header">מסמכים בשיחה ({documents.length})</h2>
-        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-          {documents.map(doc => (
-            <div key={doc.id} style={{
-              padding: '15px',
-              border: '1px solid #e1e8ed',
-              borderRadius: '8px',
-              marginBottom: '10px'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <strong>📄 {doc.fileName}</strong>
-                  <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-                    גודל: {doc.fileSize} |
-                    סטטוס: {doc.status === 'COMPLETED' ? '✅ מעובד' : '⏳ בעיבוד'}
-                  </div>
-                </div>
-                <button
-                  className="session-action-btn"
-                  onClick={() => onDelete(doc.id)}
-                  title="מחק מסמך"
-                >
-                  🗑️
-                </button>
-              </div>
-              {doc.characterCount && (
-                <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-                  {doc.characterCount.toLocaleString()} תווים |
-                  {doc.chunkCount} chunks
-                </div>
-              )}
-            </div>
-          ))}
+      {/* אינדיקטור טעינה גלובלי */}
+      {loading && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'white',
+          padding: '30px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+          zIndex: 9999
+        }}>
+          <div className="spinner"></div>
+          <p style={{ marginTop: '15px', textAlign: 'center' }}>טוען...</p>
         </div>
-        <div className="modal-actions">
-          <button className="btn-cancel" onClick={onClose}>סגור</button>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

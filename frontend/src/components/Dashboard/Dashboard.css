@@ -511,7 +511,7 @@
   background: #5a6fd8;
 }
 
-/* Toast Notification */
+/* Toast Notifications - עדכון */
 .toast {
   position: fixed;
   top: 90px;
@@ -524,6 +524,7 @@
   align-items: center;
   gap: 10px;
   z-index: 1001;
+  min-width: 250px;
 }
 
 .toast.show {
@@ -534,9 +535,11 @@
 @keyframes slideIn {
   from {
     transform: translateX(400px);
+    opacity: 0;
   }
   to {
     transform: translateX(0);
+    opacity: 1;
   }
 }
 
@@ -544,8 +547,27 @@
   border-right: 4px solid #28a745;
 }
 
+.toast.success::before {
+  content: "✅";
+  font-size: 20px;
+}
+
 .toast.error {
   border-right: 4px solid #dc3545;
+}
+
+.toast.error::before {
+  content: "❌";
+  font-size: 20px;
+}
+
+.toast.warning {
+  border-right: 4px solid #ffc107;
+}
+
+.toast.warning::before {
+  content: "⚠️";
+  font-size: 20px;
 }
 
 /* Loading Spinner */
