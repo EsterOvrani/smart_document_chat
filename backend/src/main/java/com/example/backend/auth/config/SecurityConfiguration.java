@@ -39,7 +39,7 @@ public class SecurityConfiguration {
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         
-                        // ✅ כל השאר דורש אימות
+                        // ✅ כל השאר דורש אימות (כולל /api/**)
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

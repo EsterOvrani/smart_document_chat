@@ -11,10 +11,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-@RequestMapping("/users")
+@RequestMapping("/api/users") 
 @RestController
 public class UserController {
+    
     private final UserService userService;
+    
     public UserController(UserService userService) {
         this.userService = userService;
     }
@@ -28,7 +30,7 @@ public class UserController {
 
     @GetMapping("/")
     public ResponseEntity<List<User>> allUsers() {
-        List <User> users = userService.allUsers();
+        List<User> users = userService.allUsers();
         return ResponseEntity.ok(users);
     }
 }
