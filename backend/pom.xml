@@ -34,7 +34,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 	
-	    <dependencies>
+	<dependencies>
         <!-- Spring Boot Starter Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -105,7 +105,7 @@
             <version>1.5.5.Final</version>
         </dependency>
 
-        <!-- MapStruct Processor (לקומפילציה) -->
+        <!-- MapStruct Processor -->
         <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct-processor</artifactId>
@@ -113,10 +113,7 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- 
-        אם משתמשים ב-Lombok + MapStruct ביחד,
-        צריך להוסיף את ה-binding הזה:
-        -->
+        <!-- Lombok + MapStruct binding -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok-mapstruct-binding</artifactId>
@@ -138,10 +135,11 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- ✅ PDFBox - שונה לגרסה 2.0.29 -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
-            <version>3.0.0</version>
+            <version>2.0.29</version>
         </dependency>
 
         <!-- Qdrant Client - Vector Database -->
@@ -149,6 +147,13 @@
             <groupId>io.qdrant</groupId>
             <artifactId>client</artifactId>
             <version>1.7.0</version>
+        </dependency>
+
+        <!-- ✅ Google Protobuf - נוסף! -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>3.25.1</version>
         </dependency>
 
         <!-- MinIO Client - Object Storage -->
@@ -171,17 +176,14 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Validation -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-
-
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

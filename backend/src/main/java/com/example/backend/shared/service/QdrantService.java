@@ -4,6 +4,7 @@ import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
 import io.qdrant.client.grpc.Collections.*;
 import io.qdrant.client.grpc.Points.*;
+import io.qdrant.client.grpc.JsonWithInt;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,25 +14,14 @@ import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
-/**
- * Service לניהול Qdrant Vector Database
- * 
- * תפקידים:
- * - יצירת collections (מאגרי וקטורים)
- * - הוספת vectors (embeddings)
- * - חיפוש vectors דומים
- * - מחיקת vectors
- */
 @Service
 @Slf4j
 public class QdrantService {
 
-    // ==================== Configuration ====================
-    
     @Value("${qdrant.host:localhost}")
     private String qdrantHost;
 
-    @Value("${qdrant.port:6334}")  // gRPC port
+    @Value("${qdrant.port:6334}")
     private int qdrantPort;
 
     @Value("${qdrant.api-key:}")
@@ -39,24 +29,17 @@ public class QdrantService {
 
     private QdrantClient client;
 
-    // ==================== Initialization ====================
-
-    /**
-     * אתחול חיבור ל-Qdrant
-     */
     @PostConstruct
     public void init() {
         try {
             log.info("Connecting to Qdrant at {}:{}", qdrantHost, qdrantPort);
 
-            // יצירת client
             QdrantGrpcClient.Builder builder = QdrantGrpcClient.newBuilder(
                 qdrantHost, 
                 qdrantPort, 
-                false  // useTls
+                false
             );
 
-            // אם יש API key
             if (apiKey != null && !apiKey.isEmpty()) {
                 builder.withApiKey(apiKey);
             }
@@ -71,30 +54,20 @@ public class QdrantService {
         }
     }
 
-    // ==================== Collection Management ====================
-
-    /**
-     * יצירת collection חדש
-     * 
-     * @param collectionName - שם ייחודי (למשל: "chat_123_user_5")
-     */
     public void createCollection(String collectionName) {
         try {
             log.info("Creating Qdrant collection: {}", collectionName);
 
-            // בדיקה אם כבר קיים
             if (collectionExists(collectionName)) {
                 log.info("Collection already exists: {}", collectionName);
                 return;
             }
 
-            // הגדרות ה-collection
             VectorParams vectorParams = VectorParams.newBuilder()
-                .setSize(3072)  // OpenAI text-embedding-3-large dimension
-                .setDistance(Distance.Cosine)  // Cosine similarity
+                .setSize(3072)
+                .setDistance(Distance.Cosine)
                 .build();
 
-            // יצירה
             client.createCollectionAsync(
                 collectionName,
                 vectorParams
@@ -108,9 +81,6 @@ public class QdrantService {
         }
     }
 
-    /**
-     * בדיקה אם collection קיים
-     */
     public boolean collectionExists(String collectionName) {
         try {
             client.getCollectionInfoAsync(collectionName).get();
@@ -120,9 +90,6 @@ public class QdrantService {
         }
     }
 
-    /**
-     * מחיקת collection
-     */
     public void deleteCollection(String collectionName) {
         try {
             log.info("Deleting Qdrant collection: {}", collectionName);
@@ -141,18 +108,6 @@ public class QdrantService {
         }
     }
 
-    // ==================== Vector Operations ====================
-
-    /**
-     * הוספת vector (embedding + metadata)
-     * 
-     * @param collectionName - שם ה-collection
-     * @param id - מזהה ייחודי (למשל: "doc_1_chunk_0")
-     * @param vector - embedding (3072 מספרים)
-     * @param text - הטקסט המקורי
-     * @param documentId - מזהה המסמך
-     * @param documentName - שם המסמך
-     */
     public void upsertVector(
             String collectionName,
             String id,
@@ -164,37 +119,33 @@ public class QdrantService {
         try {
             log.debug("Upserting vector: {} to collection: {}", id, collectionName);
 
-            // המרה ל-List<Float>
             List<Float> vectorList = new ArrayList<>();
             for (float v : vector) {
                 vectorList.add(v);
             }
 
-            // בניית metadata
-            Map<String, com.google.protobuf.Value> payload = new HashMap<>();
+            Map<String, JsonWithInt.Value> payload = new HashMap<>();
             payload.put("text", 
-                com.google.protobuf.Value.newBuilder()
+                JsonWithInt.Value.newBuilder()
                     .setStringValue(text)
                     .build());
             payload.put("document_id", 
-                com.google.protobuf.Value.newBuilder()
-                    .setNumberValue(documentId)
+                JsonWithInt.Value.newBuilder()
+                    .setIntegerValue(documentId)
                     .build());
             payload.put("document_name", 
-                com.google.protobuf.Value.newBuilder()
+                JsonWithInt.Value.newBuilder()
                     .setStringValue(documentName)
                     .build());
 
-            // בניית Point
             PointStruct point = PointStruct.newBuilder()
                 .setId(PointId.newBuilder().setUuid(id).build())
                 .setVectors(Vectors.newBuilder().setVector(
-                    Vector.newBuilder().addAllData(vectorList).build()
+                    io.qdrant.client.grpc.Points.Vector.newBuilder().addAllData(vectorList).build()
                 ).build())
                 .putAllPayload(payload)
                 .build();
 
-            // העלאה ל-Qdrant
             client.upsertAsync(
                 collectionName,
                 Collections.singletonList(point)
@@ -208,14 +159,6 @@ public class QdrantService {
         }
     }
 
-    /**
-     * חיפוש vectors דומים
-     * 
-     * @param collectionName - שם ה-collection
-     * @param queryVector - embedding של השאלה
-     * @param limit - כמה תוצאות להחזיר
-     * @return רשימת תוצאות ממוינות לפי relevance
-     */
     public List<SearchResult> search(
             String collectionName,
             float[] queryVector,
@@ -224,13 +167,11 @@ public class QdrantService {
         try {
             log.info("Searching in collection: {} with limit: {}", collectionName, limit);
 
-            // המרה ל-List<Float>
             List<Float> vectorList = new ArrayList<>();
             for (float v : queryVector) {
                 vectorList.add(v);
             }
 
-            // ביצוע חיפוש
             List<ScoredPoint> results = client.searchAsync(
                 SearchPoints.newBuilder()
                     .setCollectionName(collectionName)
@@ -242,21 +183,19 @@ public class QdrantService {
                     .build()
             ).get();
 
-            // המרה לSearchResult
             List<SearchResult> searchResults = new ArrayList<>();
             for (ScoredPoint point : results) {
                 SearchResult result = new SearchResult();
                 result.setId(point.getId().getUuid());
-                result.setScore(point.getScore());
+                result.setScore((double) point.getScore());
 
-                // חילוץ metadata
-                Map<String, com.google.protobuf.Value> payload = point.getPayloadMap();
+                Map<String, JsonWithInt.Value> payload = point.getPayloadMap();
                 
                 if (payload.containsKey("text")) {
                     result.setText(payload.get("text").getStringValue());
                 }
                 if (payload.containsKey("document_id")) {
-                    result.setDocumentId((long) payload.get("document_id").getNumberValue());
+                    result.setDocumentId(payload.get("document_id").getIntegerValue());
                 }
                 if (payload.containsKey("document_name")) {
                     result.setDocumentName(payload.get("document_name").getStringValue());
@@ -274,15 +213,11 @@ public class QdrantService {
         }
     }
 
-    /**
-     * מחיקת vectors של מסמך ספציפי
-     */
     public void deleteVectorsByDocument(String collectionName, Long documentId) {
         try {
             log.info("Deleting vectors for document: {} from collection: {}", 
                 documentId, collectionName);
 
-            // יצירת filter
             Filter filter = Filter.newBuilder()
                 .addMust(Condition.newBuilder()
                     .setField(FieldCondition.newBuilder()
@@ -294,7 +229,6 @@ public class QdrantService {
                     .build())
                 .build();
 
-            // מחיקה
             client.deleteAsync(collectionName, filter).get();
 
             log.info("Vectors deleted successfully for document: {}", documentId);
@@ -305,12 +239,9 @@ public class QdrantService {
         }
     }
 
-    /**
-     * קבלת מידע על collection
-     */
     public CollectionInfo getCollectionInfo(String collectionName) {
         try {
-            CollectionDescription description = client
+            io.qdrant.client.grpc.Collections.CollectionInfo description = client
                 .getCollectionInfoAsync(collectionName)
                 .get();
 
@@ -318,7 +249,7 @@ public class QdrantService {
             info.setName(collectionName);
             info.setVectorsCount(description.getVectorsCount());
             info.setPointsCount(description.getPointsCount());
-            info.setStatus(description.getStatus().name());
+            info.setStatus(description.getStatus().toString());
 
             return info;
 
@@ -328,23 +259,15 @@ public class QdrantService {
         }
     }
 
-    // ==================== Inner Classes ====================
-
-    /**
-     * תוצאת חיפוש
-     */
     @Data
     public static class SearchResult {
         private String id;
-        private Double score;  // 0.0 - 1.0
+        private Double score;
         private String text;
         private Long documentId;
         private String documentName;
     }
 
-    /**
-     * מידע על collection
-     */
     @Data
     public static class CollectionInfo {
         private String name;

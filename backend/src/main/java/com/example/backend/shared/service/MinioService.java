@@ -11,6 +11,7 @@ import jakarta.annotation.PostConstruct;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.Data;
 
 /**
  * Service לניהול אחסון קבצים ב-MinIO
@@ -382,7 +383,7 @@ public class MinioService {
     /**
      * מידע על קובץ
      */
-    @lombok.Data
+    @Data
     public static class FileInfo {
         private String objectName;
         private Long size;
