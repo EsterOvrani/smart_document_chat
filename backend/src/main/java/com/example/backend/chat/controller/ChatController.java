@@ -64,18 +64,34 @@ public class ChatController {
             @RequestParam("files") List<MultipartFile> files) {
 
         try {
-            log.info("Creating new chat with title: {}", title);
+            log.info("========================================");
+            log.info("🎯 ChatController.createChat() called");
+            log.info("📝 Title: {}", title);
+            log.info("📦 Files received: {}", files != null ? files.size() : "NULL!");
+            
+            if (files != null) {
+                for (int i = 0; i < files.size(); i++) {
+                    MultipartFile file = files.get(i);
+                    log.info("   File {}: name='{}', size={}, isEmpty={}", 
+                        i + 1, 
+                        file.getOriginalFilename(), 
+                        file.getSize(),
+                        file.isEmpty());
+                }
+            }
+            log.info("========================================");
 
-            // קבלת המשתמש המחובר
             User currentUser = getCurrentUser();
+            log.info("👤 Current user: {} (ID: {})", currentUser.getEmail(), currentUser.getId());
 
-            // בניית בקשה
             CreateChatRequest request = new CreateChatRequest(title, files);
+            log.info("📋 CreateChatRequest created with {} files", request.getFileCount());
 
-            // יצירת השיחה
+            log.info("🚀 Calling chatService.createChat()...");
             ChatResponse chatResponse = chatService.createChat(request, currentUser);
+            log.info("✅ chatService.createChat() returned successfully");
+            log.info("✅ Chat ID: {}", chatResponse.getId());
 
-            // בניית תגובה
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "שיחה נוצרה בהצלחה");
@@ -84,11 +100,14 @@ public class ChatController {
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
         } catch (IllegalArgumentException e) {
-            log.warn("Invalid request: {}", e.getMessage());
+            log.error("❌ Validation error: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
 
         } catch (Exception e) {
-            log.error("Failed to create chat", e);
+            log.error("❌ Failed to create chat", e);
+            log.error("❌ Exception type: {}", e.getClass().getName());
+            log.error("❌ Exception message: {}", e.getMessage());
+            e.printStackTrace();
             return buildErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "נכשל ביצירת השיחה: " + e.getMessage()
@@ -411,5 +430,39 @@ public class ChatController {
         response.put("error", message);
 
         return ResponseEntity.status(status).body(response);
+    }
+
+    // ==================== Processing Status ====================
+    /**
+     * קבלת סטטוס עיבוד מפורט
+     * 
+     * GET /api/chats/{id}/processing-status
+     * 
+     * Response: ProcessingStatusResponse
+     */
+    @GetMapping("/{id}/processing-status")
+    public ResponseEntity<Map<String, Object>> getProcessingStatus(@PathVariable Long id) {
+        try {
+            User currentUser = getCurrentUser();
+            
+            ProcessingStatusResponse status = chatService.getProcessingStatus(id, currentUser);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", status);
+
+            return ResponseEntity.ok(response);
+
+        } catch (RuntimeException e) {
+            log.warn("Failed to get processing status for chat: {}", id);
+            return buildErrorResponse(HttpStatus.NOT_FOUND, "שיחה לא נמצאה");
+
+        } catch (Exception e) {
+            log.error("Failed to get processing status for chat: {}", id, e);
+            return buildErrorResponse(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "שגיאה בקבלת סטטוס עיבוד"
+            );
+        }
     }
 }

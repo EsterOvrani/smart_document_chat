@@ -1,7 +1,8 @@
+// backend/src/main/java/com/example/backend/document/service/DocumentService.java
 package com.example.backend.document.service;
 
 import com.example.backend.chat.model.Chat;
-import com.example.backend.chat.service.ChatService;
+import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.document.dto.DocumentResponse;
 import com.example.backend.document.mapper.DocumentMapper;
 import com.example.backend.document.model.Document;
@@ -15,7 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.hibernate.validator.internal.util.stereotypes.Lazy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,79 +28,69 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Service לעיבוד מסמכים
- * 
- * זרימת עיבוד:
- * 1. קבלת קובץ PDF
- * 2. שמירה ב-MinIO
- * 3. פירסור PDF → טקסט
- * 4. חלוקה ל-chunks
- * 5. יצירת embeddings (OpenAI)
- * 6. שמירה ב-Qdrant
- * 7. עדכון סטטוס
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 @Transactional
 public class DocumentService {
 
-    // ==================== Dependencies ====================
-    
     private final DocumentRepository documentRepository;
+    private final ChatRepository chatRepository; // ✅ שימוש ישיר ב-Repository במקום ChatService
     private final DocumentMapper documentMapper;
     private final MinioService minioService;
     private final OpenAIService openAIService;
     private final QdrantService qdrantService;
-    @Lazy
-    private ChatService chatService;
 
-    // ==================== Constants ====================
-    
-    private static final int CHUNK_SIZE = 1000;  // 1000 תווים לchunk
-    private static final int CHUNK_OVERLAP = 200;  // חפיפה של 200 תווים
+    private static final int CHUNK_SIZE = 1000;
+    private static final int CHUNK_OVERLAP = 200;
 
-    // ==================== Process Document ====================
-
-    /**
-     * עיבוד מסמך - נקודת הכניסה הראשית
-     * 
-     * @Async - רץ באופן אסינכרוני (לא חוסם)
-     */
     @Async
     public void processDocument(MultipartFile file, Chat chat) {
-        log.info("Starting to process document: {} for chat: {}", 
-            file.getOriginalFilename(), chat.getId());
+        // ✅ הוסף logs מיד בהתחלה!
+        log.info("🔵🔵🔵 ========================================");
+        log.info("🔵 processDocument() CALLED!");
+        log.info("🔵 Thread name: {}", Thread.currentThread().getName());
+        log.info("🔵 File: {}", file.getOriginalFilename());
+        log.info("🔵 File size: {}", file.getSize());
+        log.info("🔵 Chat ID: {}", chat.getId());
+        log.info("🔵 Chat title: {}", chat.getTitle());
+        log.info("🔵🔵🔵 ========================================");
 
         Document document = null;
+        String filePath = null;
 
         try {
-            // ==================== 1. Create Document Entity ====================
-            
-            document = createDocumentEntity(file, chat);
+            // ==================== 1. Upload to MinIO FIRST ====================
+            log.info("📍 Step 1: Generating file path...");
+            filePath = generateFilePath(chat, file);
+            log.info("✅ File path generated: {}", filePath);
+
+            log.info("📍 Step 2: Uploading to MinIO...");
+            minioService.uploadFile(
+                file.getInputStream(),
+                filePath,
+                file.getContentType(),
+                file.getSize()
+            );
+            log.info("✅ File uploaded to MinIO successfully");
+
+            // ==================== 2. Create Document Entity ====================
+            log.info("📍 Step 3: Creating Document entity...");
+            document = createDocumentEntity(file, chat, filePath);
+            log.info("✅ Document entity created (not saved yet)");
+
+            log.info("📍 Step 4: Saving Document to database...");
             document = documentRepository.save(document);
-            log.info("Document entity created with ID: {}", document.getId());
+            log.info("✅ Document saved with ID: {}", document.getId());
 
-            // ==================== 2. Validate File ====================
-            
+            // ==================== 3. Validate File ====================
             validateFile(file);
-            
-            // בדיקת כפילויות
-            checkForDuplicates(file, chat);
-
-            // ==================== 3. Upload to MinIO ====================
-            
-            String filePath = uploadToMinio(file, chat, document);
-            document.setFilePath(filePath);
 
             // ==================== 4. Start Processing ====================
-            
             document.startProcessing();
             document = documentRepository.save(document);
 
             // ==================== 5. Extract Text from PDF ====================
-            
             String text = extractTextFromPDF(file);
             
             int characterCount = text.length();
@@ -107,63 +98,87 @@ public class DocumentService {
             log.info("Extracted {} characters from PDF", characterCount);
 
             // ==================== 6. Split into Chunks ====================
-            
             List<String> chunks = splitIntoChunks(text);
             int chunkCount = chunks.size();
             document.setChunkCount(chunkCount);
             log.info("Split into {} chunks", chunkCount);
 
             // ==================== 7. Create Embeddings ====================
-            
             List<float[]> embeddings = createEmbeddings(chunks, document);
             log.info("Created {} embeddings", embeddings.size());
 
             // ==================== 8. Store in Qdrant ====================
-            
             storeInQdrant(chat, document, chunks, embeddings);
             log.info("Stored embeddings in Qdrant");
 
             // ==================== 9. Mark as Completed ====================
-            
             document.markAsCompleted(characterCount, chunkCount);
             documentRepository.save(document);
 
-            // עדכן את סטטוס השיחה
-            chatService.updateChatStatus(chat.getId());
+            // ✅ עדכן סטטוס השיחה ישירות דרך Repository
+            updateChatStatus(chat.getId());
 
             log.info("Document {} processed successfully", document.getId());
 
         } catch (Exception e) {
-            log.error("Failed to process document: {}", file.getOriginalFilename(), e);
+            log.error("🔴🔴🔴 ========================================");
+            log.error("🔴 EXCEPTION in processDocument()!");
+            log.error("🔴 File: {}", file.getOriginalFilename());
+            log.error("🔴 Error type: {}", e.getClass().getName());
+            log.error("🔴 Error message: {}", e.getMessage());
+            log.error("🔴🔴🔴 ========================================");
+            e.printStackTrace();
 
+            // עדכן הסטטוס של המסמך כנכשל
             if (document != null) {
                 document.markAsFailed(e.getMessage());
                 documentRepository.save(document);
             }
 
-            // עדכן שיחה שנכשל
-            chatService.markChatAsFailed(chat.getId(), 
-                "נכשל בעיבוד מסמך: " + file.getOriginalFilename());
+            // ✅ סמן שיחה כנכשלת ישירות דרך Repository
+            markChatAsFailed(chat.getId(), "נכשל בעיבוד מסמך: " + file.getOriginalFilename());
+            
+            // נקה את הקובץ מ-MinIO אם הועלה
+            if (filePath != null) {
+                try {
+                    minioService.deleteFile(filePath);
+                    log.info("Cleaned up file from MinIO: {}", filePath);
+                } catch (Exception cleanupError) {
+                    log.warn("Failed to cleanup file from MinIO: {}", filePath, cleanupError);
+                }
+            }
         }
     }
 
     // ==================== Helper Methods ====================
 
     /**
-     * יצירת Document Entity
+     * יצירת נתיב קובץ ב-MinIO
      */
-    private Document createDocumentEntity(MultipartFile file, Chat chat) {
+    private String generateFilePath(Chat chat, MultipartFile file) {
+        return String.format("users/%d/chats/%d/%s_%s",
+            chat.getUser().getId(),
+            chat.getId(),
+            System.currentTimeMillis(),
+            file.getOriginalFilename()
+        );
+    }
+
+    /**
+     * יצירת Document Entity עם file_path
+     */
+    private Document createDocumentEntity(MultipartFile file, Chat chat, String filePath) {
         Document document = new Document();
         document.setOriginalFileName(file.getOriginalFilename());
         document.setFileType("pdf");
         document.setFileSize(file.getSize());
+        document.setFilePath(filePath); // ✅ הוסף את ה-filePath!
         document.setProcessingStatus(ProcessingStatus.PENDING);
         document.setProcessingProgress(0);
         document.setChat(chat);
         document.setUser(chat.getUser());
         document.setActive(true);
 
-        // חישוב hash
         try {
             byte[] fileBytes = file.getBytes();
             String hash = calculateHash(fileBytes);
@@ -188,61 +203,9 @@ public class DocumentService {
             throw new IllegalArgumentException("הקובץ חייב להיות PDF");
         }
 
-        // מקסימום 50MB
         if (file.getSize() > 50 * 1024 * 1024) {
             throw new IllegalArgumentException("הקובץ גדול מ-50MB");
         }
-    }
-
-    /**
-     * בדיקת כפילויות
-     */
-    private void checkForDuplicates(MultipartFile file, Chat chat) {
-        // בדיקה לפי שם
-        documentRepository.findByChatAndOriginalFileNameAndActiveTrue(
-            chat, file.getOriginalFilename()
-        ).ifPresent(doc -> {
-            throw new IllegalArgumentException(
-                "קובץ עם שם זהה כבר קיים בשיחה זו");
-        });
-
-        // בדיקה לפי hash
-        try {
-            byte[] fileBytes = file.getBytes();
-            String hash = calculateHash(fileBytes);
-            
-            documentRepository.findByChatAndContentHashAndActiveTrue(chat, hash)
-                .ifPresent(doc -> {
-                    throw new IllegalArgumentException(
-                        "קובץ עם תוכן זהה כבר קיים בשיחה זו");
-                });
-        } catch (IOException e) {
-            log.warn("Could not check for duplicate by hash", e);
-        }
-    }
-
-    /**
-     * העלאה ל-MinIO
-     */
-    private String uploadToMinio(MultipartFile file, Chat chat, Document document) 
-            throws IOException {
-        
-        String path = String.format("users/%d/chats/%d/%s_%s",
-            chat.getUser().getId(),
-            chat.getId(),
-            document.getId(),
-            file.getOriginalFilename()
-        );
-
-        minioService.uploadFile(
-            file.getInputStream(),
-            path,
-            file.getContentType(),
-            file.getSize()
-        );
-
-        log.info("File uploaded to MinIO: {}", path);
-        return path;
     }
 
     /**
@@ -266,7 +229,7 @@ public class DocumentService {
     }
 
     /**
-     * חלוקה ל-chunks עם חפיפה
+     * חלוקה ל-chunks
      */
     private List<String> splitIntoChunks(String text) {
         List<String> chunks = new ArrayList<>();
@@ -275,7 +238,6 @@ public class DocumentService {
         while (start < text.length()) {
             int end = Math.min(start + CHUNK_SIZE, text.length());
             
-            // נסה למצוא סוף משפט
             if (end < text.length()) {
                 int lastPeriod = text.lastIndexOf('.', end);
                 if (lastPeriod > start) {
@@ -288,7 +250,6 @@ public class DocumentService {
                 chunks.add(chunk);
             }
 
-            // התקדם עם חפיפה
             start = end - CHUNK_OVERLAP;
             if (start >= text.length()) break;
         }
@@ -309,9 +270,8 @@ public class DocumentService {
                 float[] embedding = openAIService.createEmbedding(chunk);
                 embeddings.add(embedding);
 
-                // עדכון progress
                 processed++;
-                int progress = (processed * 80) / chunks.size();  // 0-80%
+                int progress = (processed * 80) / chunks.size();
                 document.setProcessingProgress(progress);
                 documentRepository.save(document);
 
@@ -336,15 +296,14 @@ public class DocumentService {
             try {
                 qdrantService.upsertVector(
                     collectionName,
-                    document.getId() + "_chunk_" + i,  // ID ייחודי
+                    document.getId() + "_chunk_" + i,
                     embeddings.get(i),
                     chunks.get(i),
                     document.getId(),
                     document.getOriginalFileName()
                 );
 
-                // עדכון progress
-                int progress = 80 + ((i + 1) * 20) / chunks.size();  // 80-100%
+                int progress = 80 + ((i + 1) * 20) / chunks.size();
                 document.setProcessingProgress(progress);
                 documentRepository.save(document);
 
@@ -353,6 +312,40 @@ public class DocumentService {
                 throw new RuntimeException("נכשל בשמירת וקטור", e);
             }
         }
+    }
+
+    /**
+     * עדכון סטטוס שיחה - ישירות דרך Repository
+     */
+    private void updateChatStatus(Long chatId) {
+        log.info("Updating status for chat: {}", chatId);
+
+        Chat chat = chatRepository.findById(chatId)
+            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+
+        chat.decrementPendingDocuments();
+
+        if (chat.getPendingDocuments() == 0) {
+            chat.setStatus(Chat.ChatStatus.READY);
+            log.info("Chat {} is now READY", chatId);
+        }
+
+        chatRepository.save(chat);
+    }
+
+    /**
+     * סימון שיחה כנכשלת - ישירות דרך Repository
+     */
+    private void markChatAsFailed(Long chatId, String errorMessage) {
+        log.error("Marking chat: {} as FAILED. Error: {}", chatId, errorMessage);
+
+        Chat chat = chatRepository.findById(chatId)
+            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+
+        chat.setStatus(Chat.ChatStatus.FAILED);
+        chat.setErrorMessage(errorMessage);
+        
+        chatRepository.save(chat);
     }
 
     /**
@@ -379,13 +372,8 @@ public class DocumentService {
 
     // ==================== Get Documents ====================
 
-    /**
-     * קבלת כל המסמכים של שיחה
-     */
     public List<DocumentResponse> getDocumentsByChat(Long chatId, User user) {
         log.info("Getting documents for chat: {}", chatId);
-
-        // TODO: בדיקת הרשאות - וודא שהשיחה שייכת למשתמש
 
         Chat chat = new Chat();
         chat.setId(chatId);
@@ -396,9 +384,6 @@ public class DocumentService {
         return documentMapper.toResponseList(documents);
     }
 
-    /**
-     * קבלת מסמך ספציפי
-     */
     public DocumentResponse getDocument(Long documentId, User user) {
         log.info("Getting document: {}", documentId);
 
@@ -408,9 +393,6 @@ public class DocumentService {
         return documentMapper.toResponse(document);
     }
 
-    /**
-     * קבלת מסמכים מעובדים בלבד
-     */
     public List<DocumentResponse> getProcessedDocuments(Long chatId, User user) {
         log.info("Getting processed documents for chat: {}", chatId);
 
@@ -423,22 +405,15 @@ public class DocumentService {
         return documentMapper.toResponseList(documents);
     }
 
-    // ==================== Delete Document ====================
-
-    /**
-     * מחיקת מסמך (Soft Delete)
-     */
     public void deleteDocument(Long documentId, User user) {
         log.info("Deleting document: {}", documentId);
 
         Document document = documentRepository.findByIdAndUserAndActiveTrue(documentId, user)
             .orElseThrow(() -> new RuntimeException("מסמך לא נמצא או אין הרשאה"));
 
-        // Soft delete
         document.setActive(false);
         documentRepository.save(document);
 
-        // מחיקת הוקטורים מ-Qdrant
         try {
             String collectionName = document.getChat().getVectorCollectionName();
             qdrantService.deleteVectorsByDocument(collectionName, documentId);
@@ -447,7 +422,6 @@ public class DocumentService {
             log.warn("Failed to delete vectors from Qdrant", e);
         }
 
-        // מחיקה מ-MinIO
         try {
             minioService.deleteFile(document.getFilePath());
             log.info("Deleted file from MinIO: {}", document.getFilePath());
@@ -456,11 +430,6 @@ public class DocumentService {
         }
     }
 
-    // ==================== Statistics ====================
-
-    /**
-     * סטטיסטיקות מסמכים לשיחה
-     */
     public DocumentStatistics getDocumentStatistics(Long chatId) {
         Chat chat = new Chat();
         chat.setId(chatId);
@@ -487,8 +456,6 @@ public class DocumentService {
             .totalChunks(totalChunks)
             .build();
     }
-
-    // ==================== Inner Classes ====================
 
     @lombok.Data
     @lombok.Builder
