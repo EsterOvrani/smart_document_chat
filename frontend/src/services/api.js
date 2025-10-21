@@ -133,6 +133,11 @@ export const chatAPI = {
   deleteChat: (chatId) => api.delete(`/chats/${chatId}`),
 
   /**
+   * קבלת סטטוס עיבוד מפורט
+   */
+  getProcessingStatus: (chatId) => api.get(`/chats/${chatId}/processing-status`),
+
+  /**
    * שאילת שאלה
    */
   askQuestion: (chatId, question, contextMessageCount = 5) => {

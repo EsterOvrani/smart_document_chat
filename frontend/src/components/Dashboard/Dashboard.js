@@ -1,18 +1,18 @@
 // frontend/src/components/Dashboard/Dashboard.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authAPI, chatAPI } from '../../services/api'; // ✅ ייבוא chatAPI
+import { authAPI, chatAPI } from '../../services/api';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
 import NewSessionModal from './NewSessionModal';
 import './Dashboard.css';
 
 const Dashboard = () => {
+  // ==================== State ====================
   const [currentUser, setCurrentUser] = useState(null);
   const [currentSession, setCurrentSession] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [uploadedFiles, setUploadedFiles] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -20,17 +20,18 @@ const Dashboard = () => {
   
   const navigate = useNavigate();
 
+  // ==================== Effects ====================
   useEffect(() => {
     checkAuth();
   }, []);
 
-  // ✅ כשמשתמש מחובר - טען את השיחות
   useEffect(() => {
     if (currentUser) {
       loadSessions();
     }
   }, [currentUser]);
 
+  // ==================== Auth Functions ====================
   const checkAuth = async () => {
     try {
       const response = await authAPI.checkStatus();
@@ -57,14 +58,13 @@ const Dashboard = () => {
     }
   };
 
-  // ==================== ✅ טעינת שיחות ====================
+  // ==================== Session Functions ====================
   const loadSessions = async () => {
     try {
       setLoading(true);
       const response = await chatAPI.getAllChats();
       
       if (response.data.success) {
-        // המרת הנתונים לפורמט שהקומפוננטות מצפות לו
         const chatsData = response.data.data.chats.map(chat => ({
           id: chat.id,
           title: chat.title,
@@ -73,7 +73,9 @@ const Dashboard = () => {
           lastActivityAt: formatDateTime(chat.lastActivityAt),
           createdAt: formatDateTime(chat.createdAt),
           isReady: chat.isReady,
-          status: chat.status
+          status: chat.status,
+          pendingDocuments: chat.pendingDocuments,
+          documentCount: chat.documentCount
         }));
         
         setSessions(chatsData);
@@ -88,7 +90,173 @@ const Dashboard = () => {
     }
   };
 
-  // פונקציה לפורמט תאריך
+  const createNewSession = () => {
+    setShowNewSessionModal(true);
+  };
+
+  const submitNewSession = async (successfulCompletion) => {
+    // אם קיבלנו true - זה אומר שהעיבוד הסתיים בהצלחה
+    if (successfulCompletion === true) {
+      setShowNewSessionModal(false);
+      showToast('✅ שיחה חדשה נוצרה והמסמכים עובדו בהצלחה!', 'success');
+      
+      // טען מחדש את רשימת השיחות
+      await loadSessions();
+      
+      return;
+    }
+  };
+
+  const loadSession = async (sessionId) => {
+    try {
+      setLoading(true);
+      console.log('📥 Loading session:', sessionId);
+      
+      const response = await chatAPI.getChat(sessionId);
+      
+      if (response.data.success) {
+        const chatData = response.data.data;
+        
+        setCurrentSession({
+          id: chatData.id,
+          title: chatData.title,
+          documentsCount: chatData.documentCount,
+          messagesCount: chatData.messageCount,
+          isReady: chatData.isReady,
+          status: chatData.status,
+          pendingDocuments: chatData.pendingDocuments,
+          documentCount: chatData.documentCount
+        });
+        
+        await loadMessages(sessionId);
+        
+        showToast('שיחה נטענה בהצלחה', 'success');
+      } else {
+        showToast(response.data.error || 'שגיאה בטעינת שיחה', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Error loading session:', error);
+      showToast('שגיאה בטעינת שיחה', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMessages = async (chatId) => {
+    try {
+      const response = await chatAPI.getChatMessages(chatId);
+      
+      if (response.data.success) {
+        const messagesData = response.data.data.map(msg => ({
+          role: msg.role.toLowerCase(),
+          content: msg.content,
+          timestamp: msg.createdAt,
+          confidenceScore: msg.confidenceScore,
+          sources: msg.sources
+        }));
+        
+        setMessages(messagesData);
+      }
+    } catch (error) {
+      console.error('❌ Error loading messages:', error);
+    }
+  };
+
+  const deleteSession = async (sessionId, e) => {
+    if (e) e.stopPropagation();
+    
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק שיחה זו?')) return;
+
+    try {
+      console.log('🗑️ Deleting session:', sessionId);
+      
+      const response = await chatAPI.deleteChat(sessionId);
+      
+      if (response.data.success) {
+        showToast('✅ שיחה נמחקה בהצלחה', 'success');
+        
+        if (currentSession && currentSession.id === sessionId) {
+          setCurrentSession(null);
+          setMessages([]);
+        }
+        
+        await loadSessions();
+      } else {
+        showToast(response.data.error || 'שגיאה במחיקת שיחה', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting session:', error);
+      showToast('שגיאה במחיקת שיחה', 'error');
+    }
+  };
+
+  // ==================== Message Functions ====================
+  const sendMessage = async (text) => {
+    if (!currentSession) {
+      showToast('נא לבחור שיחה תחילה', 'error');
+      return false;
+    }
+
+    if (!text.trim()) {
+      showToast('נא להזין שאלה', 'error');
+      return false;
+    }
+
+    if (!currentSession.isReady || currentSession.status === 'PROCESSING') {
+      showToast('⏳ השיחה עדיין מעבדת מסמכים. אנא המתן...', 'warning');
+      return false;
+    }
+
+    const userMessage = {
+      role: 'user',
+      content: text,
+      timestamp: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      console.log('💬 Sending message:', text);
+      
+      const response = await chatAPI.askQuestion(currentSession.id, text);
+
+      if (response.data.success) {
+        const answerData = response.data.data;
+        
+        const assistantMessage = {
+          role: 'assistant',
+          content: answerData.answer,
+          timestamp: answerData.timestamp,
+          confidenceScore: answerData.confidence,
+          sources: answerData.sources
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+        
+        if (answerData.confidence < 0.5) {
+          showToast('⚠️ רמת ביטחון נמוכה בתשובה', 'warning');
+        }
+        
+        return true;
+      } else {
+        setMessages(prev => prev.filter(msg => msg !== userMessage));
+        showToast(response.data.error || 'שגיאה בשליחת הודעה', 'error');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
+      
+      setMessages(prev => prev.filter(msg => msg !== userMessage));
+      
+      if (error.response?.data?.error) {
+        showToast(error.response.data.error, 'error');
+      } else {
+        showToast('שגיאה בשליחת הודעה', 'error');
+      }
+      return false;
+    }
+  };
+
+  // ==================== Helper Functions ====================
   const formatDateTime = (dateTimeString) => {
     if (!dateTimeString) return '';
     
@@ -107,216 +275,6 @@ const Dashboard = () => {
     return date.toLocaleDateString('he-IL');
   };
 
-  // ==================== ✅ יצירת שיחה חדשה ====================
-  const createNewSession = () => {
-    setShowNewSessionModal(true);
-  };
-
-  const submitNewSession = async (title, files) => {
-    if (!title.trim()) {
-      showToast('נא להזין כותרת לשיחה', 'error');
-      return;
-    }
-
-    if (!files || files.length === 0) {
-      showToast('נא להעלות לפחות קובץ אחד', 'error');
-      return;
-    }
-
-    try {
-      console.log('📤 Creating new chat:', { title, filesCount: files.length });
-      
-      const response = await chatAPI.createChat(title, files);
-      
-      console.log('✅ Chat created:', response.data);
-
-      if (response.data.success) {
-        setShowNewSessionModal(false);
-        showToast('✅ שיחה חדשה נוצרה בהצלחה! מעבד מסמכים...', 'success');
-        
-        // טען מחדש את רשימת השיחות
-        await loadSessions();
-        
-        // טען את השיחה החדשה
-        const newChatId = response.data.chat.id;
-        await loadSession(newChatId);
-      } else {
-        showToast(response.data.error || 'שגיאה ביצירת שיחה', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Error creating session:', error);
-      
-      if (error.response?.data?.error) {
-        showToast(error.response.data.error, 'error');
-      } else {
-        showToast('שגיאה ביצירת שיחה', 'error');
-      }
-    }
-  };
-
-// ==================== ✅ טעינת שיחה ספציפית ====================
-  const loadSession = async (sessionId) => {
-    try {
-      setLoading(true);
-      console.log('📥 Loading session:', sessionId);
-      
-      const response = await chatAPI.getChat(sessionId);
-      
-      if (response.data.success) {
-        const chatData = response.data.data;
-        
-        setCurrentSession({
-          id: chatData.id,
-          title: chatData.title,
-          documentsCount: chatData.documentCount,
-          messagesCount: chatData.messageCount,
-          isReady: chatData.isReady,
-          status: chatData.status
-        });
-        
-        // טען את ההודעות של השיחה
-        await loadMessages(sessionId);
-        
-        showToast('שיחה נטענה בהצלחה', 'success');
-      } else {
-        showToast(response.data.error || 'שגיאה בטעינת שיחה', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Error loading session:', error);
-      showToast('שגיאה בטעינת שיחה', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ==================== ✅ טעינת הודעות ====================
-  const loadMessages = async (chatId) => {
-    try {
-      const response = await chatAPI.getChatMessages(chatId);
-      
-      if (response.data.success) {
-        // המרת הפורמט של ההודעות
-        const messagesData = response.data.data.map(msg => ({
-          role: msg.role.toLowerCase(), // USER -> user, ASSISTANT -> assistant
-          content: msg.content,
-          timestamp: msg.createdAt,
-          confidenceScore: msg.confidenceScore,
-          sources: msg.sources
-        }));
-        
-        setMessages(messagesData);
-      }
-    } catch (error) {
-      console.error('❌ Error loading messages:', error);
-      // לא מציגים toast כאן כי זה לא קריטי
-    }
-  };
-
-  // ==================== ✅ מחיקת שיחה ====================
-  const deleteSession = async (sessionId, e) => {
-    if (e) e.stopPropagation();
-    
-    if (!window.confirm('האם אתה בטוח שברצונך למחוק שיחה זו?')) return;
-
-    try {
-      console.log('🗑️ Deleting session:', sessionId);
-      
-      const response = await chatAPI.deleteChat(sessionId);
-      
-      if (response.data.success) {
-        showToast('✅ שיחה נמחקה בהצלחה', 'success');
-        
-        // אם זו השיחה הנוכחית - נקה אותה
-        if (currentSession && currentSession.id === sessionId) {
-          setCurrentSession(null);
-          setMessages([]);
-        }
-        
-        // טען מחדש את רשימת השיחות
-        await loadSessions();
-      } else {
-        showToast(response.data.error || 'שגיאה במחיקת שיחה', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Error deleting session:', error);
-      showToast('שגיאה במחיקת שיחה', 'error');
-    }
-  };
-
-  // ==================== ✅ שליחת הודעה ====================
-  const sendMessage = async (text) => {
-    if (!currentSession) {
-      showToast('נא לבחור שיחה תחילה', 'error');
-      return false;
-    }
-
-    if (!text.trim()) {
-      showToast('נא להזין שאלה', 'error');
-      return false;
-    }
-
-    // בדיקה אם השיחה מוכנה
-    if (!currentSession.isReady) {
-      showToast('⏳ השיחה עדיין מעבדת מסמכים. אנא המתן...', 'error');
-      return false;
-    }
-
-    // הוסף את הודעת המשתמש מיד (אופטימיסטית)
-    const userMessage = {
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, userMessage]);
-
-    try {
-      console.log('💬 Sending message:', text);
-      
-      const response = await chatAPI.askQuestion(currentSession.id, text);
-
-      if (response.data.success) {
-        const answerData = response.data.data;
-        
-        // הוסף את תשובת ה-AI
-        const assistantMessage = {
-          role: 'assistant',
-          content: answerData.answer,
-          timestamp: answerData.timestamp,
-          confidenceScore: answerData.confidence,
-          sources: answerData.sources
-        };
-        
-        setMessages(prev => [...prev, assistantMessage]);
-        
-        // אם יש רמת ביטחון נמוכה - הצג אזהרה
-        if (answerData.confidence < 0.5) {
-          showToast('⚠️ רמת ביטחון נמוכה בתשובה', 'warning');
-        }
-        
-        return true;
-      } else {
-        // הסר את הודעת המשתמש כי נכשל
-        setMessages(prev => prev.filter(msg => msg !== userMessage));
-        showToast(response.data.error || 'שגיאה בשליחת הודעה', 'error');
-        return false;
-      }
-    } catch (error) {
-      console.error('❌ Error sending message:', error);
-      
-      // הסר את הודעת המשתמש כי נכשל
-      setMessages(prev => prev.filter(msg => msg !== userMessage));
-      
-      if (error.response?.data?.error) {
-        showToast(error.response.data.error, 'error');
-      } else {
-        showToast('שגיאה בשליחת הודעה', 'error');
-      }
-      return false;
-    }
-  };
-
-  // ==================== פונקציות עזר ====================
-  
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => {
@@ -328,10 +286,10 @@ const Dashboard = () => {
     session.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // ==================== ✅ Render ====================
-  
+  // ==================== Render ====================
   return (
     <div className="dashboard">
+      {/* ==================== Header ==================== */}
       <header className="header">
         <div className="logo" onClick={() => window.location.reload()}>
           📚 Smart Document Chat
@@ -346,6 +304,7 @@ const Dashboard = () => {
         </div>
       </header>
 
+      {/* ==================== Main Layout ==================== */}
       <div className="main-layout">
         <Sidebar
           sessions={filteredSessions}
@@ -360,15 +319,15 @@ const Dashboard = () => {
         <ChatArea
           currentSession={currentSession}
           messages={messages}
-          uploadedFiles={uploadedFiles}
-          onFileUpload={() => {}} // ✅ לא משתמשים יותר - קבצים רק ביצירה
-          onRemoveFile={() => {}} // ✅ לא משתמשים יותר
           onSendMessage={sendMessage}
-          onShowDocuments={() => {}} // נוסיף בשלב הבא
+          onShowDocuments={() => {}}
           currentUser={currentUser}
         />
       </div>
 
+      {/* ==================== Modals ==================== */}
+      
+      {/* New Session Modal */}
       {showNewSessionModal && (
         <NewSessionModal
           onClose={() => setShowNewSessionModal(false)}
@@ -376,13 +335,14 @@ const Dashboard = () => {
         />
       )}
 
+      {/* Toast Notifications */}
       {toast.show && (
         <div className={`toast ${toast.type} show`}>
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* אינדיקטור טעינה גלובלי */}
+      {/* Global Loading Spinner */}
       {loading && (
         <div style={{
           position: 'fixed',

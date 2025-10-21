@@ -1,22 +1,25 @@
-// src/components/Dashboard/ChatArea.js
+// frontend/src/components/Dashboard/ChatArea.js
 import React, { useState, useRef, useEffect } from 'react';
 import MessageList from './MessageList';
 
 const ChatArea = ({
   currentSession,
   messages,
-  uploadedFiles,
-  onFileUpload,
-  onRemoveFile,
   onSendMessage,
   onShowDocuments,
   currentUser
 }) => {
   const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef(null);
+
+  // בדיקה אם השיחה מוכנה
+  const isSessionReady = currentSession?.isReady && currentSession?.status === 'READY';
 
   const handleSendMessage = async () => {
+    if (!isSessionReady) {
+      return;
+    }
+
     if (!messageInput.trim() || loading) return;
 
     setLoading(true);
@@ -46,9 +49,35 @@ const ChatArea = ({
         </h1>
         {currentSession && (
           <div className="chat-actions">
-            <button className="action-btn" onClick={onShowDocuments}>
-              📄 מסמכים
-            </button>
+            {!isSessionReady && (
+              <span style={{
+                padding: '8px 16px',
+                background: '#fff3cd',
+                color: '#856404',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: 500
+              }}>
+                ⏳ מעבד מסמכים...
+              </span>
+            )}
+            {isSessionReady && (
+              <>
+                <span style={{
+                  padding: '8px 16px',
+                  background: '#d4edda',
+                  color: '#155724',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 500
+                }}>
+                  ✓ מוכן
+                </span>
+                <button className="action-btn" onClick={onShowDocuments}>
+                  📄 מסמכים
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -62,50 +91,51 @@ const ChatArea = ({
 
       {currentSession && (
         <div className="input-area">
-          <div className="document-upload-area">
-            {uploadedFiles.map(file => (
-              <div key={file.id} className="uploaded-file">
-                <span>📄 {file.name}</span>
-                <button
-                  className="remove-file"
-                  onClick={() => onRemoveFile(file.id)}
-                  title="הסר"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-
           <div className="input-wrapper">
-            <label className="upload-btn" htmlFor="fileUpload" title="העלה קובץ PDF">
-              📎
-              <input
-                ref={fileInputRef}
-                type="file"
-                id="fileUpload"
-                accept=".pdf"
-                style={{ display: 'none' }}
-                onChange={onFileUpload}
-                multiple
-              />
-            </label>
             <textarea
               className="message-input"
-              placeholder="שאל שאלה על המסמכים שלך..."
+              placeholder={
+                isSessionReady 
+                  ? "שאל שאלה על המסמכים שלך..." 
+                  : "ממתין לסיום עיבוד המסמכים..."
+              }
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={loading}
+              disabled={loading || !isSessionReady}
+              style={{
+                cursor: !isSessionReady ? 'not-allowed' : 'text',
+                opacity: !isSessionReady ? 0.6 : 1
+              }}
             />
             <button
               className="send-btn"
               onClick={handleSendMessage}
-              disabled={loading || !messageInput.trim()}
+              disabled={loading || !messageInput.trim() || !isSessionReady}
+              title={!isSessionReady ? 'ממתין לסיום עיבוד המסמכים' : 'שלח הודעה'}
+              style={{
+                cursor: !isSessionReady ? 'not-allowed' : 'pointer',
+                opacity: !isSessionReady ? 0.5 : 1
+              }}
             >
               שלח
             </button>
           </div>
+
+          {!isSessionReady && currentSession && (
+            <div style={{
+              marginTop: '10px',
+              padding: '10px',
+              background: '#fff3cd',
+              border: '1px solid #ffc107',
+              borderRadius: '6px',
+              fontSize: '14px',
+              color: '#856404',
+              textAlign: 'center'
+            }}>
+              ⏳ <strong>המערכת מעבדת את המסמכים שלך.</strong> שליחת הודעות תתאפשר בעוד מספר רגעים...
+            </div>
+          )}
         </div>
       )}
     </main>
