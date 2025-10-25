@@ -1,4 +1,3 @@
-// backend/src/main/java/com/example/backend/document/service/DocumentService.java
 package com.example.backend.document.service;
 
 import com.example.backend.chat.model.Chat;
@@ -9,14 +8,21 @@ import com.example.backend.document.model.Document;
 import com.example.backend.document.model.Document.ProcessingStatus;
 import com.example.backend.document.repository.DocumentRepository;
 import com.example.backend.shared.service.MinioService;
-import com.example.backend.shared.service.OpenAIService;
-import com.example.backend.shared.service.QdrantService;
+import com.example.backend.share.service.QdrantVectorService;
 import com.example.backend.user.model.User;
+
+// LangChain4j imports
+import dev.langchain4j.data.document.DocumentParser;
+import dev.langchain4j.data.document.parser.apache.pdfbox.ApachePdfBoxDocumentParser;
+import dev.langchain4j.data.document.splitter.DocumentSplitters;
+import dev.langchain4j.data.document.splitter.DocumentByParagraphSplitter;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,6 +33,7 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -35,37 +42,30 @@ import java.util.List;
 public class DocumentService {
 
     private final DocumentRepository documentRepository;
-    private final ChatRepository chatRepository; // ✅ שימוש ישיר ב-Repository במקום ChatService
+    private final ChatRepository chatRepository;
     private final DocumentMapper documentMapper;
     private final MinioService minioService;
-    private final OpenAIService openAIService;
-    private final QdrantService qdrantService;
+    private final QdrantVectorService qdrantVectorService;
+    private final EmbeddingModel embeddingModel; // Injected from QdrantConfig
 
     private static final int CHUNK_SIZE = 1000;
     private static final int CHUNK_OVERLAP = 200;
 
     @Async
     public void processDocument(MultipartFile file, Chat chat) {
-        // ✅ הוסף logs מיד בהתחלה!
-        log.info("🔵🔵🔵 ========================================");
-        log.info("🔵 processDocument() CALLED!");
-        log.info("🔵 Thread name: {}", Thread.currentThread().getName());
+        log.info("🔵 ========================================");
+        log.info("🔵 processDocument() CALLED with LangChain4j!");
         log.info("🔵 File: {}", file.getOriginalFilename());
-        log.info("🔵 File size: {}", file.getSize());
         log.info("🔵 Chat ID: {}", chat.getId());
-        log.info("🔵 Chat title: {}", chat.getTitle());
-        log.info("🔵🔵🔵 ========================================");
+        log.info("🔵 ========================================");
 
         Document document = null;
         String filePath = null;
 
         try {
-            // ==================== 1. Upload to MinIO FIRST ====================
-            log.info("📍 Step 1: Generating file path...");
+            // 1. Upload to MinIO
+            log.info("📍 Step 1: Uploading to MinIO...");
             filePath = generateFilePath(chat, file);
-            log.info("✅ File path generated: {}", filePath);
-
-            log.info("📍 Step 2: Uploading to MinIO...");
             minioService.uploadFile(
                 file.getInputStream(),
                 filePath,
@@ -74,71 +74,92 @@ public class DocumentService {
             );
             log.info("✅ File uploaded to MinIO successfully");
 
-            // ==================== 2. Create Document Entity ====================
-            log.info("📍 Step 3: Creating Document entity...");
+            // 2. Create Document Entity
+            log.info("📍 Step 2: Creating Document entity...");
             document = createDocumentEntity(file, chat, filePath);
-            log.info("✅ Document entity created (not saved yet)");
-
-            log.info("📍 Step 4: Saving Document to database...");
             document = documentRepository.save(document);
             log.info("✅ Document saved with ID: {}", document.getId());
 
-            // ==================== 3. Validate File ====================
+            // 3. Validate File
             validateFile(file);
-
-            // ==================== 4. Start Processing ====================
             document.startProcessing();
             document = documentRepository.save(document);
 
-            // ==================== 5. Extract Text from PDF ====================
-            String text = extractTextFromPDF(file);
+            // 4. Parse PDF using LangChain4j
+            log.info("📍 Step 4: Parsing PDF with LangChain4j...");
+            DocumentParser parser = new ApachePdfBoxDocumentParser();
+            dev.langchain4j.data.document.Document langchainDoc = parser.parse(file.getInputStream());
+            String text = langchainDoc.text();
             
             int characterCount = text.length();
             document.setCharacterCount(characterCount);
-            log.info("Extracted {} characters from PDF", characterCount);
+            log.info("✅ Extracted {} characters from PDF", characterCount);
 
-            // ==================== 6. Split into Chunks ====================
-            List<String> chunks = splitIntoChunks(text);
-            int chunkCount = chunks.size();
+            // 5. Split into chunks using LangChain4j
+            log.info("📍 Step 5: Splitting into chunks...");
+            DocumentByParagraphSplitter splitter = new DocumentByParagraphSplitter(
+                CHUNK_SIZE,
+                CHUNK_OVERLAP
+            );
+            List<TextSegment> segments = splitter.split(langchainDoc);
+            
+            int chunkCount = segments.size();
             document.setChunkCount(chunkCount);
-            log.info("Split into {} chunks", chunkCount);
+            log.info("✅ Split into {} chunks", chunkCount);
 
-            // ==================== 7. Create Embeddings ====================
-            List<float[]> embeddings = createEmbeddings(chunks, document);
-            log.info("Created {} embeddings", embeddings.size());
+            // 6. Store in Qdrant using LangChain4j EmbeddingStore
+            log.info("📍 Step 6: Storing in Qdrant...");
+            String collectionName = chat.getVectorCollectionName();
+            EmbeddingStore<TextSegment> embeddingStore = 
+                qdrantVectorService.getEmbeddingStoreForCollection(collectionName);
 
-            // ==================== 8. Store in Qdrant ====================
-            storeInQdrant(chat, document, chunks, embeddings);
-            log.info("Stored embeddings in Qdrant");
+            if (embeddingStore == null) {
+                log.error("❌ No embedding store found for collection: {}", collectionName);
+                throw new RuntimeException("No embedding store for collection: " + collectionName);
+            }
 
-            // ==================== 9. Mark as Completed ====================
+            // Create embeddings and store
+            int processed = 0;
+            for (TextSegment segment : segments) {
+                // Create embedding using model
+                Embedding embedding = embeddingModel.embed(segment).content();
+                
+                // Add metadata to segment
+                segment.metadata().put("document_id", document.getId().toString());
+                segment.metadata().put("document_name", document.getOriginalFileName());
+                segment.metadata().put("chunk_index", String.valueOf(processed));
+                
+                // Store in Qdrant
+                embeddingStore.add(embedding, segment);
+                
+                processed++;
+                int progress = (processed * 100) / segments.size();
+                document.setProcessingProgress(progress);
+                documentRepository.save(document);
+                
+                log.debug("Processed chunk {}/{}", processed, segments.size());
+            }
+
+            // 7. Mark as Completed
             document.markAsCompleted(characterCount, chunkCount);
             documentRepository.save(document);
-
-            // ✅ עדכן סטטוס השיחה ישירות דרך Repository
+            
+            // Update chat status
             updateChatStatus(chat.getId());
-
-            log.info("Document {} processed successfully", document.getId());
+            
+            log.info("✅ Document {} processed successfully", document.getId());
 
         } catch (Exception e) {
-            log.error("🔴🔴🔴 ========================================");
-            log.error("🔴 EXCEPTION in processDocument()!");
-            log.error("🔴 File: {}", file.getOriginalFilename());
-            log.error("🔴 Error type: {}", e.getClass().getName());
-            log.error("🔴 Error message: {}", e.getMessage());
-            log.error("🔴🔴🔴 ========================================");
-            e.printStackTrace();
-
-            // עדכן הסטטוס של המסמך כנכשל
+            log.error("🔴 EXCEPTION in processDocument()!", e);
+            
             if (document != null) {
                 document.markAsFailed(e.getMessage());
                 documentRepository.save(document);
             }
-
-            // ✅ סמן שיחה כנכשלת ישירות דרך Repository
+            
             markChatAsFailed(chat.getId(), "נכשל בעיבוד מסמך: " + file.getOriginalFilename());
             
-            // נקה את הקובץ מ-MinIO אם הועלה
+            // Cleanup MinIO if needed
             if (filePath != null) {
                 try {
                     minioService.deleteFile(filePath);
@@ -152,9 +173,6 @@ public class DocumentService {
 
     // ==================== Helper Methods ====================
 
-    /**
-     * יצירת נתיב קובץ ב-MinIO
-     */
     private String generateFilePath(Chat chat, MultipartFile file) {
         return String.format("users/%d/chats/%d/%s_%s",
             chat.getUser().getId(),
@@ -164,15 +182,12 @@ public class DocumentService {
         );
     }
 
-    /**
-     * יצירת Document Entity עם file_path
-     */
     private Document createDocumentEntity(MultipartFile file, Chat chat, String filePath) {
         Document document = new Document();
         document.setOriginalFileName(file.getOriginalFilename());
         document.setFileType("pdf");
         document.setFileSize(file.getSize());
-        document.setFilePath(filePath); // ✅ הוסף את ה-filePath!
+        document.setFilePath(filePath);
         document.setProcessingStatus(ProcessingStatus.PENDING);
         document.setProcessingProgress(0);
         document.setChat(chat);
@@ -190,9 +205,6 @@ public class DocumentService {
         return document;
     }
 
-    /**
-     * בדיקת תקינות קובץ
-     */
     private void validateFile(MultipartFile file) {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("הקובץ ריק");
@@ -208,149 +220,6 @@ public class DocumentService {
         }
     }
 
-    /**
-     * פירסור PDF לטקסט
-     */
-    private String extractTextFromPDF(MultipartFile file) throws IOException {
-        log.info("Extracting text from PDF: {}", file.getOriginalFilename());
-
-        try (InputStream inputStream = file.getInputStream();
-             PDDocument document = PDDocument.load(inputStream)) {
-
-            PDFTextStripper stripper = new PDFTextStripper();
-            String text = stripper.getText(document);
-
-            if (text == null || text.trim().isEmpty()) {
-                throw new IOException("PDF לא מכיל טקסט");
-            }
-
-            return text.trim();
-        }
-    }
-
-    /**
-     * חלוקה ל-chunks
-     */
-    private List<String> splitIntoChunks(String text) {
-        List<String> chunks = new ArrayList<>();
-
-        int start = 0;
-        while (start < text.length()) {
-            int end = Math.min(start + CHUNK_SIZE, text.length());
-            
-            if (end < text.length()) {
-                int lastPeriod = text.lastIndexOf('.', end);
-                if (lastPeriod > start) {
-                    end = lastPeriod + 1;
-                }
-            }
-
-            String chunk = text.substring(start, end).trim();
-            if (!chunk.isEmpty()) {
-                chunks.add(chunk);
-            }
-
-            start = end - CHUNK_OVERLAP;
-            if (start >= text.length()) break;
-        }
-
-        log.info("Created {} chunks from text", chunks.size());
-        return chunks;
-    }
-
-    /**
-     * יצירת embeddings
-     */
-    private List<float[]> createEmbeddings(List<String> chunks, Document document) {
-        List<float[]> embeddings = new ArrayList<>();
-
-        int processed = 0;
-        for (String chunk : chunks) {
-            try {
-                float[] embedding = openAIService.createEmbedding(chunk);
-                embeddings.add(embedding);
-
-                processed++;
-                int progress = (processed * 80) / chunks.size();
-                document.setProcessingProgress(progress);
-                documentRepository.save(document);
-
-            } catch (Exception e) {
-                log.error("Failed to create embedding for chunk", e);
-                throw new RuntimeException("נכשל ביצירת embedding", e);
-            }
-        }
-
-        return embeddings;
-    }
-
-    /**
-     * שמירה ב-Qdrant
-     */
-    private void storeInQdrant(Chat chat, Document document, 
-                               List<String> chunks, List<float[]> embeddings) {
-        
-        String collectionName = chat.getVectorCollectionName();
-
-        for (int i = 0; i < chunks.size(); i++) {
-            try {
-                qdrantService.upsertVector(
-                    collectionName,
-                    document.getId() + "_chunk_" + i,
-                    embeddings.get(i),
-                    chunks.get(i),
-                    document.getId(),
-                    document.getOriginalFileName()
-                );
-
-                int progress = 80 + ((i + 1) * 20) / chunks.size();
-                document.setProcessingProgress(progress);
-                documentRepository.save(document);
-
-            } catch (Exception e) {
-                log.error("Failed to store vector in Qdrant", e);
-                throw new RuntimeException("נכשל בשמירת וקטור", e);
-            }
-        }
-    }
-
-    /**
-     * עדכון סטטוס שיחה - ישירות דרך Repository
-     */
-    private void updateChatStatus(Long chatId) {
-        log.info("Updating status for chat: {}", chatId);
-
-        Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
-
-        chat.decrementPendingDocuments();
-
-        if (chat.getPendingDocuments() == 0) {
-            chat.setStatus(Chat.ChatStatus.READY);
-            log.info("Chat {} is now READY", chatId);
-        }
-
-        chatRepository.save(chat);
-    }
-
-    /**
-     * סימון שיחה כנכשלת - ישירות דרך Repository
-     */
-    private void markChatAsFailed(Long chatId, String errorMessage) {
-        log.error("Marking chat: {} as FAILED. Error: {}", chatId, errorMessage);
-
-        Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
-
-        chat.setStatus(Chat.ChatStatus.FAILED);
-        chat.setErrorMessage(errorMessage);
-        
-        chatRepository.save(chat);
-    }
-
-    /**
-     * חישוב SHA-256 hash
-     */
     private String calculateHash(byte[] data) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -370,7 +239,35 @@ public class DocumentService {
         }
     }
 
-    // ==================== Get Documents ====================
+    private void updateChatStatus(Long chatId) {
+        log.info("Updating status for chat: {}", chatId);
+
+        Chat chat = chatRepository.findById(chatId)
+            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+
+        chat.decrementPendingDocuments();
+
+        if (chat.getPendingDocuments() == 0) {
+            chat.setStatus(Chat.ChatStatus.READY);
+            log.info("Chat {} is now READY", chatId);
+        }
+
+        chatRepository.save(chat);
+    }
+
+    private void markChatAsFailed(Long chatId, String errorMessage) {
+        log.error("Marking chat: {} as FAILED. Error: {}", chatId, errorMessage);
+
+        Chat chat = chatRepository.findById(chatId)
+            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+
+        chat.setStatus(Chat.ChatStatus.FAILED);
+        chat.setErrorMessage(errorMessage);
+        
+        chatRepository.save(chat);
+    }
+
+    // ==================== Get Documents Methods ====================
 
     public List<DocumentResponse> getDocumentsByChat(Long chatId, User user) {
         log.info("Getting documents for chat: {}", chatId);
@@ -414,14 +311,7 @@ public class DocumentService {
         document.setActive(false);
         documentRepository.save(document);
 
-        try {
-            String collectionName = document.getChat().getVectorCollectionName();
-            qdrantService.deleteVectorsByDocument(collectionName, documentId);
-            log.info("Deleted vectors for document: {}", documentId);
-        } catch (Exception e) {
-            log.warn("Failed to delete vectors from Qdrant", e);
-        }
-
+        // Delete from MinIO
         try {
             minioService.deleteFile(document.getFilePath());
             log.info("Deleted file from MinIO: {}", document.getFilePath());

@@ -8,9 +8,24 @@ import com.example.backend.chat.model.Message;
 import com.example.backend.chat.model.Message.MessageRole;
 import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.chat.repository.MessageRepository;
-import com.example.backend.shared.service.OpenAIService;
-import com.example.backend.shared.service.QdrantService;
+import com.example.backend.share.service.QdrantVectorService;
 import com.example.backend.user.model.User;
+
+// LangChain4j imports
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiTokenizer;
+import dev.langchain4j.model.output.Response;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -24,15 +39,7 @@ import java.util.stream.Collectors;
 
 /**
  * Service לטיפול בשאלות ותשובות AI
- * 
- * זרימה:
- * 1. קבלת שאלה מהמשתמש
- * 2. שמירת השאלה כ-Message
- * 3. חיפוש מסמכים רלוונטיים ב-Qdrant
- * 4. שליחת הקשר + שאלה ל-OpenAI
- * 5. קבלת תשובה
- * 6. שמירת התשובה כ-Message
- * 7. החזרת AnswerResponse
+ * משתמש ב-LangChain4j במקום QdrantService ו-OpenAIService
  */
 @Service
 @RequiredArgsConstructor
@@ -45,8 +52,9 @@ public class ChatAIService {
     private final ChatRepository chatRepository;
     private final MessageRepository messageRepository;
     private final MessageMapper messageMapper;
-    private final QdrantService qdrantService;
-    private final OpenAIService openAIService;
+    private final QdrantVectorService qdrantVectorService;
+    private final EmbeddingModel embeddingModel; // From QdrantConfig
+    private final OpenAiChatModel chatModel; // From QdrantConfig
 
     // ==================== Constants ====================
     
@@ -91,34 +99,37 @@ public class ChatAIService {
 
             // ==================== 4. Search Relevant Documents ====================
             
-            List<QdrantService.SearchResult> relevantChunks = 
-                searchRelevantDocuments(chat, request.getQuestion());
+            List<RelevantDocument> relevantDocs = searchRelevantDocuments(chat, request.getQuestion());
 
-            if (relevantChunks.isEmpty()) {
+            if (relevantDocs.isEmpty()) {
                 return createNoResultsResponse(userMessage);
             }
 
-            // ==================== 5. Build AI Prompt ====================
+            // ==================== 5. Build Messages for LangChain4j ====================
             
-            String prompt = buildPrompt(
+            List<dev.langchain4j.data.message.ChatMessage> messages = buildChatMessages(
                 request.getQuestion(),
                 contextMessages,
-                relevantChunks
+                relevantDocs
             );
 
-            // ==================== 6. Call OpenAI ====================
+            // ==================== 6. Call OpenAI via LangChain4j ====================
             
-            String answer = openAIService.chat(prompt);
+            Response<AiMessage> response = chatModel.generate(messages);
+            String answer = response.content().text();
             
             // ==================== 7. Calculate Metrics ====================
             
             long responseTime = System.currentTimeMillis() - startTime;
-            Double confidence = calculateConfidence(relevantChunks);
-            Integer tokensUsed = estimateTokens(prompt, answer);
+            Double confidence = calculateConfidence(relevantDocs);
+            
+            // Calculate tokens using OpenAiTokenizer
+            OpenAiTokenizer tokenizer = new OpenAiTokenizer("gpt-4");
+            int tokensUsed = tokenizer.estimateTokenCountInMessage(response.content());
 
             // ==================== 8. Build Sources ====================
             
-            List<AnswerResponse.Source> sources = buildSources(relevantChunks);
+            List<AnswerResponse.Source> sources = buildSources(relevantDocs);
 
             // ==================== 9. Save Assistant Message ====================
             
@@ -134,7 +145,7 @@ public class ChatAIService {
 
             // ==================== 10. Build Response ====================
             
-            AnswerResponse response = AnswerResponse.builder()
+            AnswerResponse answerResponse = AnswerResponse.builder()
                 .answer(answer)
                 .success(true)
                 .confidence(confidence)
@@ -146,7 +157,7 @@ public class ChatAIService {
                 .build();
 
             log.info("Question answered successfully in {}ms", responseTime);
-            return response;
+            return answerResponse;
 
         } catch (Exception e) {
             log.error("Failed to answer question for chat: {}", chatId, e);
@@ -197,11 +208,9 @@ public class ChatAIService {
             return new ArrayList<>();
         }
 
-        // קח את X ההודעות האחרונות
         List<Message> messages = messageRepository
             .findByChatOrderByCreatedAtDesc(chat, PageRequest.of(0, count));
 
-        // הפוך את הסדר (מהישן לחדש)
         java.util.Collections.reverse(messages);
 
         log.info("Retrieved {} context messages", messages.size());
@@ -209,24 +218,53 @@ public class ChatAIService {
     }
 
     /**
-     * חיפוש מסמכים רלוונטיים ב-Qdrant
+     * חיפוש מסמכים רלוונטיים ב-Qdrant דרך LangChain4j
      */
-    private List<QdrantService.SearchResult> searchRelevantDocuments(
-            Chat chat, String question) {
-        
+    private List<RelevantDocument> searchRelevantDocuments(Chat chat, String question) {
         try {
+            // קבלת ה-EmbeddingStore של השיחה
+            EmbeddingStore<TextSegment> embeddingStore = 
+                qdrantVectorService.getEmbeddingStoreForCollection(chat.getVectorCollectionName());
+
+            if (embeddingStore == null) {
+                log.error("No embedding store found for collection: {}", chat.getVectorCollectionName());
+                return new ArrayList<>();
+            }
+
             // יצירת embedding לשאלה
-            float[] questionEmbedding = openAIService.createEmbedding(question);
+            Embedding queryEmbedding = embeddingModel.embed(question).content();
 
-            // חיפוש ב-Qdrant
-            List<QdrantService.SearchResult> results = qdrantService.search(
-                chat.getVectorCollectionName(),
-                questionEmbedding,
-                MAX_RELEVANT_CHUNKS
-            );
+            // חיפוש מסמכים רלוונטיים
+            EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+                .queryEmbedding(queryEmbedding)
+                .maxResults(MAX_RELEVANT_CHUNKS)
+                .minScore(0.7) // רק תוצאות עם דמיון מעל 0.7
+                .build();
 
-            log.info("Found {} relevant chunks", results.size());
-            return results;
+            EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);
+            List<EmbeddingMatch<TextSegment>> matches = searchResult.matches();
+
+            log.info("Found {} relevant chunks", matches.size());
+
+            // המרה למבנה נתונים פנימי
+            List<RelevantDocument> relevantDocs = new ArrayList<>();
+            for (EmbeddingMatch<TextSegment> match : matches) {
+                RelevantDocument doc = new RelevantDocument();
+                doc.setText(match.embedded().text());
+                doc.setScore(match.score());
+                
+                // נסה לחלץ metadata
+                if (match.embedded().metadata() != null) {
+                    doc.setDocumentId(Long.parseLong(
+                        match.embedded().metadata().getOrDefault("document_id", "0")));
+                    doc.setDocumentName(
+                        match.embedded().metadata().getOrDefault("document_name", "Unknown"));
+                }
+                
+                relevantDocs.add(doc);
+            }
+
+            return relevantDocs;
 
         } catch (Exception e) {
             log.error("Failed to search relevant documents", e);
@@ -235,51 +273,49 @@ public class ChatAIService {
     }
 
     /**
-     * בניית prompt ל-OpenAI
+     * בניית הודעות לצ'אט עבור LangChain4j
      */
-    private String buildPrompt(
+    private List<dev.langchain4j.data.message.ChatMessage> buildChatMessages(
             String question,
             List<Message> contextMessages,
-            List<QdrantService.SearchResult> relevantChunks) {
+            List<RelevantDocument> relevantDocs) {
 
-        StringBuilder prompt = new StringBuilder();
+        List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
 
-        // הוראות למערכת
-        prompt.append("אתה עוזר AI שעונה על שאלות על סמך מסמכים.\n\n");
+        // הודעת מערכת
+        messages.add(SystemMessage.from(
+            "אתה עוזר AI שעונה על שאלות על סמך מסמכים. " +
+            "ענה בעברית בצורה ברורה ומדויקת. " +
+            "התבסס רק על המידע שסופק מהמסמכים. " +
+            "אם אין מספיק מידע, אמר זאת בבירור."
+        ));
 
         // הקשר מההיסטוריה
-        if (!contextMessages.isEmpty()) {
-            prompt.append("=== הקשר מהשיחה ===\n");
-            for (Message msg : contextMessages) {
-                prompt.append(msg.getRole() == MessageRole.USER ? "משתמש: " : "עוזר: ");
-                prompt.append(msg.getContent()).append("\n");
+        for (Message msg : contextMessages) {
+            if (msg.getRole() == MessageRole.USER) {
+                messages.add(UserMessage.from(msg.getContent()));
+            } else if (msg.getRole() == MessageRole.ASSISTANT) {
+                messages.add(AiMessage.from(msg.getContent()));
             }
-            prompt.append("\n");
         }
 
         // מידע רלוונטי מהמסמכים
-        prompt.append("=== מידע רלוונטי מהמסמכים ===\n");
-        for (int i = 0; i < relevantChunks.size(); i++) {
-            QdrantService.SearchResult result = relevantChunks.get(i);
-            prompt.append(String.format("[מסמך %d - %s]:\n%s\n\n",
+        StringBuilder context = new StringBuilder();
+        context.append("מידע רלוונטי מהמסמכים:\n\n");
+        
+        for (int i = 0; i < relevantDocs.size(); i++) {
+            RelevantDocument doc = relevantDocs.get(i);
+            context.append(String.format("[מסמך %d - %s]:\n%s\n\n",
                 i + 1,
-                result.getDocumentName(),
-                result.getText()
+                doc.getDocumentName(),
+                doc.getText()
             ));
         }
 
-        // השאלה
-        prompt.append("=== שאלה ===\n");
-        prompt.append(question).append("\n\n");
+        // השאלה עם ההקשר
+        messages.add(UserMessage.from(context.toString() + "\nשאלה: " + question));
 
-        // הוראות לתשובה
-        prompt.append("=== הוראות ===\n");
-        prompt.append("1. ענה על השאלה בעברית בצורה ברורה ומדויקת\n");
-        prompt.append("2. התבסס רק על המידע שסופק מהמסמכים\n");
-        prompt.append("3. אם אין מספיק מידע, אמר זאת בבירור\n");
-        prompt.append("4. ציין את מקור המידע (מסמך X) בתשובה\n");
-
-        return prompt.toString();
+        return messages;
     }
 
     /**
@@ -304,7 +340,7 @@ public class ChatAIService {
         message.setResponseTimeMs(responseTime);
         message.setCreatedAt(LocalDateTime.now());
 
-        // המרת sources ל-String (JSON)
+        // המרת sources ל-String
         if (sources != null && !sources.isEmpty()) {
             String sourcesStr = sources.stream()
                 .map(AnswerResponse.Source::getDocumentName)
@@ -318,20 +354,18 @@ public class ChatAIService {
     /**
      * בניית רשימת מקורות
      */
-    private List<AnswerResponse.Source> buildSources(
-            List<QdrantService.SearchResult> relevantChunks) {
-
+    private List<AnswerResponse.Source> buildSources(List<RelevantDocument> relevantDocs) {
         List<AnswerResponse.Source> sources = new ArrayList<>();
 
-        for (int i = 0; i < relevantChunks.size(); i++) {
-            QdrantService.SearchResult result = relevantChunks.get(i);
+        for (int i = 0; i < relevantDocs.size(); i++) {
+            RelevantDocument doc = relevantDocs.get(i);
 
             AnswerResponse.Source source = AnswerResponse.Source.builder()
-                .documentId(result.getDocumentId())
-                .documentName(result.getDocumentName())
-                .excerpt(truncateText(result.getText(), 200))
-                .relevanceScore(result.getScore())
-                .isPrimary(i == 0)  // הראשון הוא העיקרי
+                .documentId(doc.getDocumentId())
+                .documentName(doc.getDocumentName())
+                .excerpt(truncateText(doc.getText(), 200))
+                .relevanceScore(doc.getScore())
+                .isPrimary(i == 0)
                 .build();
 
             sources.add(source);
@@ -343,27 +377,17 @@ public class ChatAIService {
     /**
      * חישוב רמת ביטחון
      */
-    private Double calculateConfidence(List<QdrantService.SearchResult> results) {
+    private Double calculateConfidence(List<RelevantDocument> results) {
         if (results.isEmpty()) {
             return 0.0;
         }
 
-        // ממוצע של scores
         double avgScore = results.stream()
-            .mapToDouble(QdrantService.SearchResult::getScore)
+            .mapToDouble(RelevantDocument::getScore)
             .average()
             .orElse(0.0);
 
         return Math.min(avgScore, 1.0);
-    }
-
-    /**
-     * הערכת כמות tokens
-     */
-    private Integer estimateTokens(String prompt, String response) {
-        // הערכה גסה: 1 token ≈ 4 characters
-        int totalChars = prompt.length() + response.length();
-        return totalChars / 4;
     }
 
     /**
@@ -424,5 +448,18 @@ public class ChatAIService {
     public List<Message> getChatHistory(Long chatId, User user) {
         Chat chat = validateAndGetChat(chatId, user);
         return messageRepository.findByChatOrderByCreatedAtAsc(chat);
+    }
+
+    // ==================== Inner Classes ====================
+    
+    /**
+     * מסמך רלוונטי (תוצאת חיפוש)
+     */
+    @lombok.Data
+    private static class RelevantDocument {
+        private String text;
+        private Double score;
+        private Long documentId;
+        private String documentName;
     }
 }

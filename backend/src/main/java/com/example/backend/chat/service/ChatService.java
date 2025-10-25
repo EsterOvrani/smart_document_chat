@@ -6,7 +6,7 @@ import com.example.backend.chat.model.Chat;
 import com.example.backend.chat.model.Chat.ChatStatus;
 import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.document.service.DocumentService;
-import com.example.backend.shared.service.QdrantService;
+import com.example.backend.share.service.QdrantVectorService;
 import com.example.backend.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,28 +14,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.example.backend.chat.dto.ProcessingStatusResponse;
 import com.example.backend.document.model.Document;
 import com.example.backend.document.repository.DocumentRepository;
 import java.util.stream.Collectors;
-import com.example.backend.chat.dto.ProcessingStatusResponse;
 import java.time.LocalDateTime;
 
 import java.util.List;
 
 /**
  * Service לניהול שיחות
- * 
- * אחראי על:
- * - יצירת שיחות חדשות
- * - קבלת רשימת שיחות
- * - מחיקת שיחות
- * - עדכון סטטוס
+ * עדכון לשימוש ב-QdrantVectorService במקום QdrantService
  */
 @Service
-@RequiredArgsConstructor  // Lombok יוצר constructor עם final fields
-@Slf4j  // Lombok יוצר logger
-@Transactional  // כל הפעולות בטרנזקציה (אם נכשל - rollback)
+@RequiredArgsConstructor
+@Slf4j
+@Transactional
 public class ChatService {
 
     // ==================== Dependencies ====================
@@ -43,24 +36,13 @@ public class ChatService {
     private final ChatRepository chatRepository;
     private final ChatMapper chatMapper;
     private final DocumentService documentService;
-    private final QdrantService qdrantService;
+    private final QdrantVectorService qdrantVectorService; // שינוי!
     private final DocumentRepository documentRepository;
 
     // ==================== Create Chat ====================
 
     /**
      * יצירת שיחה חדשה עם מסמכים
-     * 
-     * זרימה:
-     * 1. יצירת Chat entity
-     * 2. יצירת collection ב-Qdrant
-     * 3. העלאת קבצים
-     * 4. עיבוד קבצים (אסינכרוני)
-     * 5. החזרת תגובה
-     * 
-     * @param request - כותרת + קבצים
-     * @param user - המשתמש המחובר
-     * @return ChatResponse - פרטי השיחה שנוצרה
      */
     public ChatResponse createChat(CreateChatRequest request, User user) {
         log.info("========================================");
@@ -68,7 +50,6 @@ public class ChatService {
             user.getUsername(), request.getTitle());
         log.info("📦 Number of files in request: {}", request.getFiles().size());
         
-        // הדפס מידע על כל קובץ
         for (int i = 0; i < request.getFiles().size(); i++) {
             MultipartFile file = request.getFiles().get(i);
             log.info("📄 File {}: name={}, size={}, contentType={}", 
@@ -92,26 +73,14 @@ public class ChatService {
         chat.setStatus(ChatStatus.CREATING);
         chat.setPendingDocuments(request.getFileCount());
 
-        String collectionName = generateCollectionName(user.getId());
+        // ==================== Create Qdrant Collection using QdrantVectorService ====================
+        
+        // שימוש ב-QdrantVectorService במקום QdrantService
+        String collectionName = qdrantVectorService.createNewCollectionForUpload(request.getFileCount());
         chat.setVectorCollectionName(collectionName);
 
         chat = chatRepository.save(chat);
-        log.info("✅ Chat created with ID: {}", chat.getId());
-        log.info("✅ Pending documents: {}", chat.getPendingDocuments());
-
-        // ==================== Create Qdrant Collection ====================
-
-        try {
-            log.info("🗄️ Creating Qdrant collection: {}", collectionName);
-            qdrantService.createCollection(collectionName);
-            log.info("✅ Qdrant collection created: {}", collectionName);
-        } catch (Exception e) {
-            log.error("❌ Failed to create Qdrant collection: {}", collectionName, e);
-            chat.setStatus(ChatStatus.FAILED);
-            chat.setErrorMessage("נכשל ביצירת מאגר וקטורים: " + e.getMessage());
-            chatRepository.save(chat);
-            throw new RuntimeException("נכשל ביצירת מאגר וקטורים", e);
-        }
+        log.info("✅ Chat created with ID: {} with collection: {}", chat.getId(), collectionName);
 
         // ==================== Upload Documents ====================
 
@@ -125,22 +94,14 @@ public class ChatService {
 
             for (int i = 0; i < files.size(); i++) {
                 MultipartFile file = files.get(i);
-                log.info("========================================");
                 log.info("📄 Processing file {}/{}: {}", i + 1, files.size(), file.getOriginalFilename());
-                log.info("📏 File size: {} bytes", file.getSize());
-                log.info("📋 Content type: {}", file.getContentType());
-                log.info("========================================");
 
                 try {
-                    log.info("🔄 Calling documentService.processDocument()...");
                     documentService.processDocument(file, chat);
-                    log.info("✅ documentService.processDocument() called successfully");
+                    log.info("✅ File queued for processing");
                 } catch (Exception e) {
-                    log.error("❌ FAILED to call documentService.processDocument() for file: {}", 
+                    log.error("❌ FAILED to process file: {}", 
                         file.getOriginalFilename(), e);
-                    log.error("❌ Error type: {}", e.getClass().getName());
-                    log.error("❌ Error message: {}", e.getMessage());
-                    e.printStackTrace();
                 }
             }
 
@@ -170,15 +131,12 @@ public class ChatService {
 
         validateUser(user);
 
-        // קבלת כל השיחות
         List<Chat> chats = chatRepository
             .findByUserAndActiveTrueOrderByLastActivityAtDesc(user);
 
-        // המרה ל-DTO
         List<ChatListResponse.ChatSummary> summaries = 
             chatMapper.toChatSummaryList(chats);
 
-        // בניית התגובה עם סטטיסטיקות
         return ChatListResponse.builder()
             .chats(summaries)
             .totalCount(chats.size())
@@ -198,7 +156,6 @@ public class ChatService {
         
         ChatResponse response = chatMapper.toResponse(chat);
         
-        // הוספת מסמכים אם השיחה מוכנה
         if (chat.isReady()) {
             response.setDocuments(
                 chatMapper.toDocumentInfoList(chat.getDocuments())
@@ -246,7 +203,6 @@ public class ChatService {
 
     /**
      * עדכון סטטוס שיחה
-     * (נקרא מ-DocumentService כשמסמך מסיים)
      */
     public void updateChatStatus(Long chatId) {
         log.info("Updating status for chat: {}", chatId);
@@ -254,10 +210,8 @@ public class ChatService {
         Chat chat = chatRepository.findById(chatId)
             .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
 
-        // הפחת pending documents
         chat.decrementPendingDocuments();
 
-        // אם הכל הסתיים - שנה סטטוס ל-READY
         if (chat.getPendingDocuments() == 0) {
             chat.setStatus(ChatStatus.READY);
             log.info("Chat {} is now READY", chatId);
@@ -295,12 +249,12 @@ public class ChatService {
         chat.setActive(false);
         chatRepository.save(chat);
 
-        // אופציונלי: מחיקת collection מ-Qdrant
+        // אופציונלי: הסרת קולקשין מ-cache
         try {
-            qdrantService.deleteCollection(chat.getVectorCollectionName());
-            log.info("Qdrant collection deleted: {}", chat.getVectorCollectionName());
+            qdrantVectorService.removeCollectionFromCache(chat.getVectorCollectionName());
+            log.info("Collection removed from cache: {}", chat.getVectorCollectionName());
         } catch (Exception e) {
-            log.warn("Failed to delete Qdrant collection: {}", 
+            log.warn("Failed to remove collection from cache: {}", 
                 chat.getVectorCollectionName(), e);
         }
     }
@@ -313,15 +267,6 @@ public class ChatService {
     private Chat findChatByIdAndUser(Long chatId, User user) {
         return chatRepository.findByIdAndUserAndActiveTrue(chatId, user)
             .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה או אין הרשאה"));
-    }
-
-    /**
-     * יצירת שם collection ייחודי
-     */
-    private String generateCollectionName(Long userId) {
-        return String.format("chat_%s_user_%d", 
-            java.util.UUID.randomUUID().toString().substring(0, 8), 
-            userId);
     }
 
     /**
@@ -412,11 +357,9 @@ public class ChatService {
 
         Chat chat = findChatByIdAndUser(chatId, user);
         
-        // קבל את כל המסמכים של השיחה
         List<Document> documents = documentRepository
             .findByChatAndActiveTrueOrderByCreatedAtDesc(chat);
 
-        // חשב סטטיסטיקות
         int totalDocs = documents.size();
         int completedDocs = (int) documents.stream()
             .filter(doc -> doc.getProcessingStatus() == Document.ProcessingStatus.COMPLETED)
@@ -428,28 +371,23 @@ public class ChatService {
             .filter(doc -> doc.getProcessingStatus() == Document.ProcessingStatus.FAILED)
             .count();
 
-        // חשב אחוז התקדמות כללי
         int overallProgress = totalDocs > 0 
             ? (completedDocs * 100) / totalDocs 
             : 0;
 
-        // מצא את המסמך שמעבדים כרגע
         Document currentProcessingDoc = documents.stream()
             .filter(doc -> doc.getProcessingStatus() == Document.ProcessingStatus.PROCESSING)
             .findFirst()
             .orElse(null);
 
-        // חשב זמן משוער שנותר (30 שניות למסמך)
         int remainingDocs = totalDocs - completedDocs - failedDocs;
         long estimatedTimeRemaining = remainingDocs * 30L;
 
-        // חשב כמה זמן עבר מאז התחלת העיבוד
         LocalDateTime startTime = chat.getCreatedAt();
         long elapsedSeconds = startTime != null 
             ? java.time.Duration.between(startTime, LocalDateTime.now()).getSeconds()
             : 0L;
 
-        // בנה את התגובה
         ProcessingStatusResponse.ProcessingStatusResponseBuilder responseBuilder = 
             ProcessingStatusResponse.builder()
                 .status(chat.getStatus().name())
@@ -464,7 +402,6 @@ public class ChatService {
                 .processingStartedAt(startTime)
                 .elapsedTimeSeconds(elapsedSeconds);
 
-        // הוסף מידע על המסמך הנוכחי
         if (currentProcessingDoc != null) {
             ProcessingStatusResponse.CurrentDocument currentDoc = 
                 ProcessingStatusResponse.CurrentDocument.builder()
@@ -481,7 +418,6 @@ public class ChatService {
             responseBuilder.currentDocument(currentDoc);
         }
 
-        // הוסף רשימת כל המסמכים
         List<ProcessingStatusResponse.DocumentStatus> docStatuses = documents.stream()
             .map(doc -> {
                 Long processingTime = null;
