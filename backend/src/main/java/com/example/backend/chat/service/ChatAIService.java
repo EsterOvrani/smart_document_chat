@@ -255,10 +255,15 @@ public class ChatAIService {
                 
                 // נסה לחלץ metadata
                 if (match.embedded().metadata() != null) {
-                    doc.setDocumentId(Long.parseLong(
-                        match.embedded().metadata().getOrDefault("document_id", "0")));
-                    doc.setDocumentName(
-                        match.embedded().metadata().getOrDefault("document_name", "Unknown"));
+                    String docIdStr = match.embedded().metadata().getString("document_id");
+                    if (docIdStr != null) {
+                        doc.setDocumentId(Long.parseLong(docIdStr));
+                    } else {
+                        doc.setDocumentId(0L);
+                    }
+                    
+                    String docName = match.embedded().metadata().getString("document_name");
+                    doc.setDocumentName(docName != null ? docName : "Unknown");
                 }
                 
                 relevantDocs.add(doc);
