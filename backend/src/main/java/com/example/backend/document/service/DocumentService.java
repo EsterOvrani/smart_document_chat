@@ -10,6 +10,8 @@ import com.example.backend.document.repository.DocumentRepository;
 import com.example.backend.shared.service.MinioService;
 import com.example.backend.share.service.QdrantVectorService;
 import com.example.backend.user.model.User;
+import com.example.backend.shared.service.DocumentChunkingService;
+import com.example.backend.document.model.Document;
 
 // LangChain4j imports
 import dev.langchain4j.data.document.DocumentParser;
@@ -47,6 +49,7 @@ public class DocumentService {
     private final MinioService minioService;
     private final QdrantVectorService qdrantVectorService;
     private final EmbeddingModel embeddingModel; // Injected from QdrantConfig
+    private final DocumentChunkingService chunkingService;
 
     private static final int CHUNK_SIZE = 1000;
     private static final int CHUNK_OVERLAP = 200;
@@ -97,11 +100,12 @@ public class DocumentService {
 
             // 5. Split into chunks using LangChain4j
             log.info("📍 Step 5: Splitting into chunks...");
-            DocumentByParagraphSplitter splitter = new DocumentByParagraphSplitter(
-                CHUNK_SIZE,
-                CHUNK_OVERLAP
+            // ⭐ שימוש ב-DocumentChunkingService
+            List<TextSegment> segments = chunkingService.chunkDocument(
+                text, 
+                document.getOriginalFileName(),
+                document.getId()
             );
-            List<TextSegment> segments = splitter.split(langchainDoc);
             
             int chunkCount = segments.size();
             document.setChunkCount(chunkCount);

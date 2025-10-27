@@ -125,10 +125,18 @@ public class QdrantVectorService {
             // יצור קולקשין חדש דרך PUT
             String createUrl = qdrantUrl + "/collections/" + collectionName;
 
+            // ⭐ זה החלק שהשתנה - הוספת HNSW config
             Map<String, Object> body = Map.of(
                     "vectors", Map.of(
-                            "size", 3072,  // OpenAI text-embedding-3-large
-                            "distance", "Cosine"
+                            "size", qdrantProperties.getDimension(),
+                            "distance", qdrantProperties.getDistance()
+                    ),
+                    "hnsw_config", Map.of(  // ⭐ הוספה חשובה לדיוק!
+                            "m", qdrantProperties.getHnswM(),
+                            "ef_construct", qdrantProperties.getHnswEfConstruct()
+                    ),
+                    "optimizers_config", Map.of(
+                            "indexing_threshold", 10000
                     )
             );
 
@@ -144,7 +152,7 @@ public class QdrantVectorService {
             );
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("✅ Collection '{}' created successfully via REST API", collectionName);
+                log.info("✅ Collection '{}' created with HNSW optimization", collectionName);
             } else {
                 log.error("❌ Failed to create collection '{}': {}", collectionName, response.getBody());
             }

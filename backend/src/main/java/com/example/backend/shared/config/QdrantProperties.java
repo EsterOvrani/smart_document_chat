@@ -18,4 +18,13 @@ public class QdrantProperties {
     // Embedding configuration
     private int dimension = 3072; // OpenAI text-embedding-3-large dimension
     private String distance = "Cosine"; // Distance metric for similarity search
+    
+    // ⭐ הוסף את השורות האלה - פרמטרי חיפוש
+    private int defaultMaxResults = 5;
+    private double defaultMinScore = 0.7;
+    
+    // ⭐ הוסף את השורות האלה - HNSW optimization לדיוק
+    private int hnswM = 16;
+    private int hnswEfConstruct = 200;  // גבוה יותר = דיוק טוב יותר
+    private int hnswEf = 128;  // מספר הוקטורים שנבדקים בחיפוש
 }
