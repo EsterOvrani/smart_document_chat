@@ -342,26 +342,32 @@ public class ChatController {
      */
     @GetMapping("/{id}/messages")
     public ResponseEntity<Map<String, Object>> getChatMessages(@PathVariable Long id) {
+        log.info("🔵 GET /api/chats/{}/messages called", id);
+        
         try {
             User currentUser = getCurrentUser();
+            log.info("✅ Current user: {}", currentUser.getEmail());
             
             List<Message> messages = chatAIService.getChatHistory(id, currentUser);
+            log.info("✅ Retrieved {} messages", messages.size());
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", messages);
             response.put("count", messages.size());
 
+            log.info("✅ Returning response with {} messages", messages.size());
             return ResponseEntity.ok(response);
 
         } catch (RuntimeException e) {
+            log.error("❌ RuntimeException: {}", e.getMessage(), e);
             return buildErrorResponse(HttpStatus.NOT_FOUND, "שיחה לא נמצאה");
 
         } catch (Exception e) {
-            log.error("Failed to get messages for chat: {}", id, e);
+            log.error("❌ Exception in getChatMessages for chat {}: {}", id, e.getMessage(), e);
             return buildErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל בקבלת ההודעות"
+                "נכשל בקבלת ההודעות: " + e.getMessage()
             );
         }
     }

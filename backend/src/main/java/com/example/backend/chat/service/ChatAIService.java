@@ -450,9 +450,35 @@ public class ChatAIService {
     /**
      * קבלת היסטוריית הודעות
      */
+    @Transactional(readOnly = true)  // ← הוסף את זה!
     public List<Message> getChatHistory(Long chatId, User user) {
-        Chat chat = validateAndGetChat(chatId, user);
-        return messageRepository.findByChatOrderByCreatedAtAsc(chat);
+        log.info("🔵 getChatHistory called for chatId: {}, user: {}", chatId, user.getEmail());
+        
+        try {
+            Chat chat = validateAndGetChat(chatId, user);
+            log.info("✅ Chat found: {}, Title: {}", chat.getId(), chat.getTitle());
+            
+            List<Message> messages = messageRepository.findByChatOrderByCreatedAtAsc(chat);
+            log.info("✅ Found {} messages for chat {}", messages.size(), chatId);
+            
+            if (messages.isEmpty()) {
+                log.warn("⚠️ No messages found for chat {}", chatId);
+            }
+            
+            // Force lazy loading
+            messages.forEach(msg -> {
+                log.debug("Message {}: role={}, content length={}", 
+                    msg.getId(), 
+                    msg.getRole(), 
+                    msg.getContent() != null ? msg.getContent().length() : 0);
+            });
+            
+            return messages;
+            
+        } catch (Exception e) {
+            log.error("❌ Error getting chat history for chatId: {}", chatId, e);
+            throw new RuntimeException("Failed to get chat history: " + e.getMessage(), e);
+        }
     }
 
     // ==================== Inner Classes ====================
