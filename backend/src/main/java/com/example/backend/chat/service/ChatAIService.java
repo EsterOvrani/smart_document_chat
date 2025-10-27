@@ -238,7 +238,7 @@ public class ChatAIService {
             EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                 .queryEmbedding(queryEmbedding)
                 .maxResults(MAX_RELEVANT_CHUNKS)
-                .minScore(0.7) // רק תוצאות עם דמיון מעל 0.7
+                .minScore(0.5) // רק תוצאות עם דמיון מעל 0.7
                 .build();
 
             EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);

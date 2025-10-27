@@ -21,7 +21,7 @@ public class QdrantProperties {
     
     // ⭐ הוסף את השורות האלה - פרמטרי חיפוש
     private int defaultMaxResults = 5;
-    private double defaultMinScore = 0.7;
+    private double defaultMinScore = 0.5;
     
     // ⭐ הוסף את השורות האלה - HNSW optimization לדיוק
     private int hnswM = 16;
