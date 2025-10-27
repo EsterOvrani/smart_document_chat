@@ -1,6 +1,6 @@
-package com.example.backend.share.service;
+package com.example.backend.shared.service;
 
-import com.example.backend.share.config.QdrantProperties;
+import com.example.backend.shared.config.QdrantProperties;
 
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.data.segment.TextSegment;

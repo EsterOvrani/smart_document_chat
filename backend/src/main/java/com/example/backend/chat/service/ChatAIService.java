@@ -8,7 +8,7 @@ import com.example.backend.chat.model.Message;
 import com.example.backend.chat.model.Message.MessageRole;
 import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.chat.repository.MessageRepository;
-import com.example.backend.share.service.QdrantVectorService;
+import com.example.backend.shared.service.QdrantVectorService;
 import com.example.backend.user.model.User;
 
 // LangChain4j imports

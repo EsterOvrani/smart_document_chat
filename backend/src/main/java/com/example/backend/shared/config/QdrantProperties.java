@@ -1,4 +1,4 @@
-package com.example.backend.share.config;
+package com.example.backend.shared.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;

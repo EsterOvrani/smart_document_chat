@@ -6,7 +6,7 @@ import com.example.backend.chat.model.Chat;
 import com.example.backend.chat.model.Chat.ChatStatus;
 import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.document.service.DocumentService;
-import com.example.backend.share.service.QdrantVectorService;
+import com.example.backend.shared.service.QdrantVectorService;
 import com.example.backend.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

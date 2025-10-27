@@ -8,7 +8,7 @@ import com.example.backend.document.model.Document;
 import com.example.backend.document.model.Document.ProcessingStatus;
 import com.example.backend.document.repository.DocumentRepository;
 import com.example.backend.shared.service.MinioService;
-import com.example.backend.share.service.QdrantVectorService;
+import com.example.backend.shared.service.QdrantVectorService;
 import com.example.backend.user.model.User;
 import com.example.backend.shared.service.DocumentChunkingService;
 import com.example.backend.document.model.Document;

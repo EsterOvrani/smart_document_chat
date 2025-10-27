@@ -1,4 +1,4 @@
-package com.example.backend.share.service;
+package com.example.backend.shared.service;
 
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;

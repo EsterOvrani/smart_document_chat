@@ -1,4 +1,4 @@
-package com.example.backend.share.config;
+package com.example.backend.shared.config;
 
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
