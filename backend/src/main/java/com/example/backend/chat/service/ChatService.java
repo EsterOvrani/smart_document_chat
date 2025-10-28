@@ -74,9 +74,9 @@ public class ChatService {
         chat.setPendingDocuments(request.getFileCount());
 
         // ==================== Create Qdrant Collection using QdrantVectorService ====================
-        
-        // שימוש ב-QdrantVectorService במקום QdrantService
-        String collectionName = qdrantVectorService.createNewCollectionForUpload(request.getFileCount());
+            
+        // ✅ העבר את שם השיחה במקום מספר הקבצים
+        String collectionName = qdrantVectorService.createNewCollectionForUpload(request.getTitle());
         chat.setVectorCollectionName(collectionName);
 
         chat = chatRepository.save(chat);

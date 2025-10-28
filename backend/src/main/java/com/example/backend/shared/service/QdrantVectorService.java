@@ -15,7 +15,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import jakarta.annotation.PostConstruct;
+import java.util.List;  
 
+// ✅ הוסף את אלה:
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -63,19 +67,37 @@ public class QdrantVectorService {
     }
 
     /**
-     * יצירת קולקשין חדש להעלאה (קובץ אחד או יותר)
+     * יצירת קולקשין חדש להעלאה
+     * @param chatTitle שם השיחה
      */
-    public String createNewCollectionForUpload(int fileCount) {
+    public String createNewCollectionForUpload(String chatTitle) {
         try {
-            String collectionName = "docs_" + System.currentTimeMillis() + "_" + fileCount + "files";
+            // ✅ ניקוי שם השיחה - הסרת תווים לא חוקיים
+            String cleanTitle = chatTitle
+                .replaceAll("[^a-zA-Z0-9א-ת\\s]", "") // רק אותיות ומספרים
+                .replaceAll("\\s+", "_")              // רווחים -> קו תחתון
+                .toLowerCase();                        // אותיות קטנות
+            
+            // ✅ הגבלת אורך (Qdrant לא אוהב שמות ארוכים מדי)
+            if (cleanTitle.length() > 50) {
+                cleanTitle = cleanTitle.substring(0, 50);
+            }
+            
+            // ✅ שם קולקשן: שם_השיחה_תאריך
+            String timestamp = LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            
+            String collectionName = cleanTitle + "_" + timestamp;
 
-            log.info("Creating new collection for {} file(s): {}", fileCount, collectionName);
+            log.info("Creating new collection: {}", collectionName);
 
             // יצור את הקולקשין דרך REST API
             createCollectionIfNotExists(collectionName);
 
-            // המתן קצת לאישור יצירה
-            Thread.sleep(300);
+            // ✅ המתן עד שהקולקשן מוכן (מקסימום 30 שניות)
+            if (!waitForCollectionReady(collectionName, 30)) {
+                throw new RuntimeException("Collection creation timeout: " + collectionName);
+            }
 
             // יצירת EmbeddingStore
             EmbeddingStore<TextSegment> newStore = QdrantEmbeddingStore.builder()
@@ -92,17 +114,47 @@ public class QdrantVectorService {
             return collectionName;
 
         } catch (Exception e) {
-            log.error("❌ Failed to create collection for upload: {}", e.getMessage(), e);
+            log.error("❌ Failed to create collection: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to create collection: " + e.getMessage(), e);
         }
     }
 
     /**
-     * יצירת קולקשין חדש לקובץ בודד (legacy method - לתאימות לאחור)
+     * בדיקה אם קולקשן קיים וזמין
      */
-    @Deprecated
-    public String createNewCollectionForFile(String fileId, String fileName) {
-        return createNewCollectionForUpload(1);
+    private boolean waitForCollectionReady(String collectionName, int maxWaitSeconds) {
+        String checkUrl = qdrantUrl + "/collections/" + collectionName;
+        
+        int attempts = 0;
+        int maxAttempts = maxWaitSeconds * 2; // כל 500ms
+        
+        while (attempts < maxAttempts) {
+            try {
+                ResponseEntity<String> response = restTemplate.getForEntity(checkUrl, String.class);
+                
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    log.info("✅ Collection '{}' is ready (attempt {}/{})", 
+                        collectionName, attempts + 1, maxAttempts);
+                    return true;
+                }
+                
+            } catch (Exception e) {
+                log.debug("Collection not ready yet, waiting... (attempt {}/{})", 
+                    attempts + 1, maxAttempts);
+            }
+            
+            try {
+                Thread.sleep(500); // המתן חצי שנייה
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            
+            attempts++;
+        }
+        
+        log.error("❌ Collection '{}' not ready after {} seconds", collectionName, maxWaitSeconds);
+        return false;
     }
 
     /**
@@ -125,13 +177,12 @@ public class QdrantVectorService {
             // יצור קולקשין חדש דרך PUT
             String createUrl = qdrantUrl + "/collections/" + collectionName;
 
-            // ⭐ זה החלק שהשתנה - הוספת HNSW config
             Map<String, Object> body = Map.of(
                     "vectors", Map.of(
                             "size", qdrantProperties.getDimension(),
                             "distance", qdrantProperties.getDistance()
                     ),
-                    "hnsw_config", Map.of(  // ⭐ הוספה חשובה לדיוק!
+                    "hnsw_config", Map.of(
                             "m", qdrantProperties.getHnswM(),
                             "ef_construct", qdrantProperties.getHnswEfConstruct()
                     ),
@@ -181,7 +232,27 @@ public class QdrantVectorService {
      * קבלת ה-EmbeddingStore של קולקשין ספציפי
      */
     public EmbeddingStore<TextSegment> getEmbeddingStoreForCollection(String collectionName) {
-        return collectionStoreMap.get(collectionName);
+        log.info("🔍 Looking for collection: {}", collectionName);
+        log.info("📊 Available collections: {}", collectionStoreMap.keySet());
+        
+        EmbeddingStore<TextSegment> store = collectionStoreMap.get(collectionName);
+        
+        if (store == null) {
+            log.warn("❌ Collection not in cache, trying to create...");
+            // נסה ליצור אותו אם הוא לא קיים
+            createCollectionIfNotExists(collectionName);
+            
+            // אחרי יצירה, צור EmbeddingStore חדש
+            store = QdrantEmbeddingStore.builder()
+                    .host(qdrantProperties.getHost())
+                    .port(qdrantProperties.getPort())
+                    .collectionName(collectionName)
+                    .build();
+            
+            collectionStoreMap.put(collectionName, store);
+        }
+        
+        return store;
     }
 
     /**
@@ -222,5 +293,13 @@ public class QdrantVectorService {
 
     public boolean isReady() {
         return qdrantProperties != null;
+    }
+    
+    /**
+     * יצירת קולקשין חדש לקובץ בודד (legacy method - לתאימות לאחור)
+     */
+    @Deprecated
+    public String createNewCollectionForFile(String fileId, String fileName) {
+        return createNewCollectionForUpload(fileName);
     }
 }

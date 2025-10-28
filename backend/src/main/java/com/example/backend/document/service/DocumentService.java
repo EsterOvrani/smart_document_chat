@@ -37,6 +37,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import java.io.ByteArrayInputStream;
+
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -54,11 +57,51 @@ public class DocumentService {
     private static final int CHUNK_SIZE = 1000;
     private static final int CHUNK_OVERLAP = 200;
 
-    @Async
+    /**
+     * עיבוד מסמך - נקודת כניסה
+     * ⚠️ לא @Async כאן! נעביר את העבודה לפונקציה פנימית
+     */
     public void processDocument(MultipartFile file, Chat chat) {
         log.info("🔵 ========================================");
-        log.info("🔵 processDocument() CALLED with LangChain4j!");
+        log.info("🔵 processDocument() CALLED - preparing file for async processing");
         log.info("🔵 File: {}", file.getOriginalFilename());
+        log.info("🔵 File size: {}", file.getSize());
+        log.info("🔵 Chat ID: {}", chat.getId());
+        log.info("🔵 ========================================");
+
+        try {
+            // ✅ שלב 1: קרא את תוכן הקובץ לזיכרון לפני ה-Async
+            byte[] fileBytes = file.getBytes();
+            String originalFilename = file.getOriginalFilename();
+            String contentType = file.getContentType();
+            long fileSize = file.getSize();
+            
+            log.info("✅ File read to memory: {} bytes", fileBytes.length);
+            
+            // ✅ שלב 2: העבר את הנתונים לפונקציה Async
+            processDocumentAsync(fileBytes, originalFilename, contentType, fileSize, chat);
+            
+        } catch (IOException e) {
+            log.error("❌ Failed to read file to memory: {}", file.getOriginalFilename(), e);
+            throw new RuntimeException("Failed to read file", e);
+        }
+    }
+
+    /**
+     * עיבוד מסמך בפועל - רץ בתהליך נפרד
+     */
+    @Async
+    public void processDocumentAsync(
+            byte[] fileBytes,
+            String originalFilename, 
+            String contentType,
+            long fileSize,
+            Chat chat) {
+        
+        log.info("🔵 ========================================");
+        log.info("🔵 processDocumentAsync() STARTED with LangChain4j!");
+        log.info("🔵 File: {}", originalFilename);
+        log.info("🔵 File bytes: {}", fileBytes.length);
         log.info("🔵 Chat ID: {}", chat.getId());
         log.info("🔵 ========================================");
 
@@ -66,44 +109,47 @@ public class DocumentService {
         String filePath = null;
 
         try {
-            // 1. Upload to MinIO
+            // ✅ 1. Upload to MinIO - יצור InputStream מה-bytes
             log.info("📍 Step 1: Uploading to MinIO...");
-            filePath = generateFilePath(chat, file);
+            filePath = generateFilePath(chat, originalFilename);
+            
             minioService.uploadFile(
-                file.getInputStream(),
+                new ByteArrayInputStream(fileBytes),  // ✅ יצור InputStream מה-bytes
                 filePath,
-                file.getContentType(),
-                file.getSize()
+                contentType,
+                fileSize
             );
             log.info("✅ File uploaded to MinIO successfully");
 
-            // 2. Create Document Entity
+            // ✅ 2. Create Document Entity
             log.info("📍 Step 2: Creating Document entity...");
-            document = createDocumentEntity(file, chat, filePath);
+            document = createDocumentEntity(originalFilename, fileSize, chat, filePath, fileBytes);
             document = documentRepository.save(document);
-            log.info("✅ Document saved with ID: {}", document.getId());
+            log.info("✅ Document entity saved with ID: {} and size: {}", document.getId(), fileSize);
 
-            // 3. Validate File
-            validateFile(file);
+            // ✅ 3. Validate (בדיקה על ה-bytes, לא על MultipartFile)
+            validateFile(originalFilename, fileBytes);
             document.startProcessing();
             document = documentRepository.save(document);
 
-            // 4. Parse PDF using LangChain4j
+            // ✅ 4. Parse PDF using LangChain4j - יצור InputStream מה-bytes
             log.info("📍 Step 4: Parsing PDF with LangChain4j...");
             DocumentParser parser = new ApachePdfBoxDocumentParser();
-            dev.langchain4j.data.document.Document langchainDoc = parser.parse(file.getInputStream());
+            
+            dev.langchain4j.data.document.Document langchainDoc = 
+                parser.parse(new ByteArrayInputStream(fileBytes));  // ✅ יצור InputStream מה-bytes
+                
             String text = langchainDoc.text();
             
             int characterCount = text.length();
             document.setCharacterCount(characterCount);
             log.info("✅ Extracted {} characters from PDF", characterCount);
 
-            // 5. Split into chunks using LangChain4j
+            // ✅ 5. Split into chunks
             log.info("📍 Step 5: Splitting into chunks...");
-            // ⭐ שימוש ב-DocumentChunkingService
             List<TextSegment> segments = chunkingService.chunkDocument(
                 text, 
-                document.getOriginalFileName(),
+                originalFilename,
                 document.getId()
             );
             
@@ -111,7 +157,7 @@ public class DocumentService {
             document.setChunkCount(chunkCount);
             log.info("✅ Split into {} chunks", chunkCount);
 
-            // 6. Store in Qdrant using LangChain4j EmbeddingStore
+            // ✅ 6. Store in Qdrant
             log.info("📍 Step 6: Storing in Qdrant...");
             String collectionName = chat.getVectorCollectionName();
             EmbeddingStore<TextSegment> embeddingStore = 
@@ -125,15 +171,12 @@ public class DocumentService {
             // Create embeddings and store
             int processed = 0;
             for (TextSegment segment : segments) {
-                // Create embedding using model
                 Embedding embedding = embeddingModel.embed(segment).content();
                 
-                // Add metadata to segment
                 segment.metadata().put("document_id", document.getId().toString());
-                segment.metadata().put("document_name", document.getOriginalFileName());
+                segment.metadata().put("document_name", originalFilename);
                 segment.metadata().put("chunk_index", String.valueOf(processed));
                 
-                // Store in Qdrant
                 embeddingStore.add(embedding, segment);
                 
                 processed++;
@@ -144,26 +187,29 @@ public class DocumentService {
                 log.debug("Processed chunk {}/{}", processed, segments.size());
             }
 
-            // 7. Mark as Completed
+            // ✅ 7. Mark as Completed
             document.markAsCompleted(characterCount, chunkCount);
             documentRepository.save(document);
             
-            // Update chat status
             updateChatStatus(chat.getId());
             
             log.info("✅ Document {} processed successfully", document.getId());
 
         } catch (Exception e) {
-            log.error("🔴 EXCEPTION in processDocument()!", e);
+            log.error("🔴 EXCEPTION in processDocumentAsync()!", e);
+            log.error("🔴 Exception type: {}", e.getClass().getName());
+            log.error("🔴 Exception message: {}", e.getMessage());
+            log.error("🔴 File name: {}", originalFilename);
+            log.error("🔴 File size (reported): {}", fileSize);
+            log.error("🔴 File bytes length: {}", fileBytes.length);
             
             if (document != null) {
                 document.markAsFailed(e.getMessage());
                 documentRepository.save(document);
             }
             
-            markChatAsFailed(chat.getId(), "נכשל בעיבוד מסמך: " + file.getOriginalFilename());
+            markChatAsFailed(chat.getId(), "נכשל בעיבוד מסמך: " + originalFilename);
             
-            // Cleanup MinIO if needed
             if (filePath != null) {
                 try {
                     minioService.deleteFile(filePath);
@@ -175,22 +221,28 @@ public class DocumentService {
         }
     }
 
-    // ==================== Helper Methods ====================
+// ==================== Helper Methods ====================
 
-    private String generateFilePath(Chat chat, MultipartFile file) {
+    private String generateFilePath(Chat chat, String originalFilename) {
         return String.format("users/%d/chats/%d/%s_%s",
             chat.getUser().getId(),
             chat.getId(),
             System.currentTimeMillis(),
-            file.getOriginalFilename()
+            originalFilename
         );
     }
 
-    private Document createDocumentEntity(MultipartFile file, Chat chat, String filePath) {
+    private Document createDocumentEntity(
+            String originalFilename, 
+            long fileSize, 
+            Chat chat, 
+            String filePath, 
+            byte[] fileBytes) {
+        
         Document document = new Document();
-        document.setOriginalFileName(file.getOriginalFilename());
+        document.setOriginalFileName(originalFilename);
         document.setFileType("pdf");
-        document.setFileSize(file.getSize());
+        document.setFileSize(fileSize);
         document.setFilePath(filePath);
         document.setProcessingStatus(ProcessingStatus.PENDING);
         document.setProcessingProgress(0);
@@ -199,29 +251,32 @@ public class DocumentService {
         document.setActive(true);
 
         try {
-            byte[] fileBytes = file.getBytes();
             String hash = calculateHash(fileBytes);
             document.setContentHash(hash);
-        } catch (IOException e) {
-            log.warn("Failed to calculate hash for file: {}", file.getOriginalFilename());
+        } catch (Exception e) {
+            log.warn("Failed to calculate hash for file: {}", originalFilename);
         }
 
         return document;
     }
 
-    private void validateFile(MultipartFile file) {
-        if (file.isEmpty()) {
+    /**
+     * ✅ בדיקת תקינות על ה-bytes, לא על MultipartFile
+     */
+    private void validateFile(String filename, byte[] fileBytes) {
+        if (fileBytes == null || fileBytes.length == 0) {
             throw new IllegalArgumentException("הקובץ ריק");
         }
 
-        String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".pdf")) {
             throw new IllegalArgumentException("הקובץ חייב להיות PDF");
         }
 
-        if (file.getSize() > 50 * 1024 * 1024) {
+        if (fileBytes.length > 50 * 1024 * 1024) {
             throw new IllegalArgumentException("הקובץ גדול מ-50MB");
         }
+        
+        log.info("✅ File validation passed: {} bytes", fileBytes.length);
     }
 
     private String calculateHash(byte[] data) {
@@ -243,6 +298,8 @@ public class DocumentService {
         }
     }
 
+
+    
     private void updateChatStatus(Long chatId) {
         log.info("Updating status for chat: {}", chatId);
 
