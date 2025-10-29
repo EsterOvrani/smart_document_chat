@@ -278,7 +278,7 @@ public class ChatAIService {
     }
 
     /**
-     * בניית הודעות לצ'אט עבור LangChain4j
+     * בניית הודעות לצ'אט עבור LangChain4j - דו-לשוני
      */
     private List<dev.langchain4j.data.message.ChatMessage> buildChatMessages(
             String question,
@@ -287,12 +287,19 @@ public class ChatAIService {
 
         List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
 
-        // הודעת מערכת
+        // ✅ הודעת מערכת דו-לשונית
         messages.add(SystemMessage.from(
             "אתה עוזר AI שעונה על שאלות על סמך מסמכים. " +
-            "ענה בעברית בצורה ברורה ומדויקת. " +
-            "התבסס רק על המידע שסופק מהמסמכים. " +
-            "אם אין מספיק מידע, אמר זאת בבירור."
+            "חשוב: ענה באותה שפה שבה נשאלת השאלה! " +
+            "אם השאלה בעברית - ענה בעברית. אם השאלה באנגלית - ענה באנגלית. " +
+            "ענה בצורה ברורה ומדויקת. התבסס רק על המידע שסופק מהמסמכים. " +
+            "אם אין מספיק מידע, אמר זאת בבירור.\n\n" +
+            
+            "You are a helpful AI assistant that answers questions based on documents. " +
+            "IMPORTANT: Answer in the SAME LANGUAGE as the question! " +
+            "If the question is in Hebrew - answer in Hebrew. If in English - answer in English. " +
+            "Answer clearly and accurately. Base your answer only on the provided document information. " +
+            "If there isn't enough information, say so clearly."
         ));
 
         // הקשר מההיסטוריה
@@ -304,13 +311,13 @@ public class ChatAIService {
             }
         }
 
-        // מידע רלוונטי מהמסמכים
+        // מידע רלוונטי מהמסמכים (דו-לשוני)
         StringBuilder context = new StringBuilder();
-        context.append("מידע רלוונטי מהמסמכים:\n\n");
+        context.append("מידע רלוונטי מהמסמכים / Relevant information from documents:\n\n");
         
         for (int i = 0; i < relevantDocs.size(); i++) {
             RelevantDocument doc = relevantDocs.get(i);
-            context.append(String.format("[מסמך %d - %s]:\n%s\n\n",
+            context.append(String.format("[מסמך / Document %d - %s]:\n%s\n\n",
                 i + 1,
                 doc.getDocumentName(),
                 doc.getText()
@@ -318,11 +325,11 @@ public class ChatAIService {
         }
 
         // השאלה עם ההקשר
-        messages.add(UserMessage.from(context.toString() + "\nשאלה: " + question));
+        messages.add(UserMessage.from(context.toString() + "\nשאלה / Question: " + question));
 
         return messages;
     }
-
+    
     /**
      * שמירת תשובת ה-AI
      */
