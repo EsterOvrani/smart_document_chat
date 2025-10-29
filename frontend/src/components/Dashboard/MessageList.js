@@ -78,11 +78,39 @@ const Message = ({ message, currentUser }) => {
     });
   };
 
+  // ✅ פונקציה לזיהוי כיוון הטקסט - עברית או אנגלית
+  const detectTextDirection = (text) => {
+    if (!text) return 'rtl';
+    
+    // הסר רווחים וקבל את התו הראשון
+    const trimmedText = text.trim();
+    if (!trimmedText) return 'rtl';
+    
+    // טווח תווים עבריים: U+0590 to U+05FF
+    const hebrewRegex = /[\u0590-\u05FF]/;
+    
+    // אם יש תווים עבריים בטקסט - כיוון מימין לשמאל
+    if (hebrewRegex.test(text)) {
+      return 'rtl';
+    }
+    
+    // אחרת (אנגלית או שפות אחרות) - כיוון משמאל לימין
+    return 'ltr';
+  };
+
+  const textDirection = detectTextDirection(message.content);
+
   return (
     <div className={`message ${message.role}`}>
       <div className="message-avatar">{avatar}</div>
       <div className="message-content">
-        <div className="message-bubble">
+        <div 
+          className="message-bubble"
+          style={{ 
+            direction: textDirection,
+            textAlign: textDirection === 'rtl' ? 'right' : 'left'
+          }}
+        >
           {message.content.split('\n').map((line, i) => (
             <React.Fragment key={i}>
               {line}
