@@ -23,21 +23,10 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.Data;
 
-/**
- * Service לניהול אחסון קבצים ב-AWS S3
- * 
- * תפקידים:
- * - העלאת קבצים
- * - הורדת קבצים
- * - מחיקת קבצים
- * - ניהול buckets
- */
 @Service
 @Slf4j
 public class S3Service {
 
-    // ==================== Configuration ====================
-    
     @Value("${aws.s3.access-key}")
     private String accessKey;
 
@@ -56,17 +45,24 @@ public class S3Service {
     private S3Client s3Client;
     private S3Presigner presigner;
 
-    // ==================== Initialization ====================
-
-    /**
-     * אתחול חיבור ל-AWS S3
-     */
     @PostConstruct
     public void init() {
         try {
-            log.info("Connecting to AWS S3...");
+            log.info("========================================");
+            log.info("🔵 Initializing AWS S3 Service...");
+            log.info("========================================");
+
+            // ✅ Validation - בדיקת תקינות משתני סביבה
+            validateConfiguration();
+
+            log.info("✅ Configuration validated successfully");
             log.info("Region: {}", region);
             log.info("Bucket: {}", bucketName);
+            log.info("Access Key: {}***", accessKey.substring(0, Math.min(4, accessKey.length())));
+            
+            if (customEndpoint != null && !customEndpoint.isEmpty()) {
+                log.info("Custom Endpoint: {}", customEndpoint);
+            }
 
             // יצירת credentials
             AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
@@ -76,7 +72,7 @@ public class S3Service {
                 .region(Region.of(region))
                 .credentialsProvider(StaticCredentialsProvider.create(credentials));
 
-            // אם יש endpoint מותאם (למשל DigitalOcean Spaces)
+            // אם יש endpoint מותאם (LocalStack, DigitalOcean Spaces וכו')
             if (customEndpoint != null && !customEndpoint.isEmpty()) {
                 log.info("Using custom endpoint: {}", customEndpoint);
                 builder.endpointOverride(URI.create(customEndpoint));
@@ -98,17 +94,56 @@ public class S3Service {
             // יצירת bucket אם לא קיים
             createBucketIfNotExists();
 
-            log.info("✅ Successfully connected to AWS S3");
+            log.info("========================================");
+            log.info("✅ AWS S3 Service initialized successfully!");
+            log.info("========================================");
 
         } catch (Exception e) {
-            log.error("❌ Failed to connect to AWS S3", e);
-            throw new RuntimeException("Failed to initialize S3 client", e);
+            log.error("========================================");
+            log.error("❌ FAILED to initialize AWS S3 Service");
+            log.error("========================================");
+            log.error("Error details:", e);
+            throw new RuntimeException("Failed to initialize S3 client: " + e.getMessage(), e);
         }
     }
 
     /**
-     * סגירת החיבור בסיום
+     * ✅ בדיקת תקינות הגדרות
      */
+    private void validateConfiguration() {
+        List<String> errors = new ArrayList<>();
+
+        if (accessKey == null || accessKey.isEmpty() || accessKey.equals("your-aws-access-key")) {
+            errors.add("AWS_ACCESS_KEY_ID is not configured or contains placeholder value!");
+        }
+
+        if (secretKey == null || secretKey.isEmpty() || secretKey.equals("your-aws-secret-key")) {
+            errors.add("AWS_SECRET_ACCESS_KEY is not configured or contains placeholder value!");
+        }
+
+        if (bucketName == null || bucketName.isEmpty()) {
+            errors.add("AWS_S3_BUCKET is not configured!");
+        }
+
+        if (region == null || region.isEmpty()) {
+            errors.add("AWS_REGION is not configured!");
+        }
+
+        if (!errors.isEmpty()) {
+            log.error("❌ S3 Configuration errors found:");
+            errors.forEach(error -> log.error("   - {}", error));
+            log.error("");
+            log.error("💡 Please check your .env file and ensure all AWS credentials are set correctly.");
+            log.error("💡 Example .env file:");
+            log.error("   AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE");
+            log.error("   AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
+            log.error("   AWS_REGION=us-east-1");
+            log.error("   AWS_S3_BUCKET=my-bucket-name");
+            
+            throw new IllegalStateException("S3 configuration is invalid. Missing or incorrect AWS credentials.");
+        }
+    }
+
     @PreDestroy
     public void cleanup() {
         if (s3Client != null) {
@@ -120,21 +155,16 @@ public class S3Service {
         log.info("S3 client closed");
     }
 
-    /**
-     * יצירת bucket אם לא קיים
-     */
     private void createBucketIfNotExists() {
         try {
-            // בדיקה אם ה-bucket קיים
             s3Client.headBucket(HeadBucketRequest.builder()
                 .bucket(bucketName)
                 .build());
             
-            log.info("Bucket already exists: {}", bucketName);
+            log.info("✅ Bucket already exists: {}", bucketName);
 
         } catch (NoSuchBucketException e) {
-            // Bucket לא קיים - ניצור אותו
-            log.info("Creating bucket: {}", bucketName);
+            log.info("📦 Creating bucket: {}", bucketName);
             
             s3Client.createBucket(CreateBucketRequest.builder()
                 .bucket(bucketName)
@@ -148,16 +178,6 @@ public class S3Service {
         }
     }
 
-    // ==================== File Operations ====================
-
-    /**
-     * העלאת קובץ ל-S3
-     * 
-     * @param inputStream - תוכן הקובץ
-     * @param objectKey - נתיב הקובץ (למשל: "users/5/chats/1/doc.pdf")
-     * @param contentType - סוג הקובץ (למשל: "application/pdf")
-     * @param size - גודל הקובץ
-     */
     public void uploadFile(
             InputStream inputStream,
             String objectKey,
@@ -185,12 +205,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * הורדת קובץ מ-S3
-     * 
-     * @param objectKey - נתיב הקובץ
-     * @return InputStream של הקובץ
-     */
     public InputStream downloadFile(String objectKey) {
         try {
             log.info("📥 Downloading file from S3: {}", objectKey);
@@ -211,11 +225,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * מחיקת קובץ מ-S3
-     * 
-     * @param objectKey - נתיב הקובץ
-     */
     public void deleteFile(String objectKey) {
         try {
             log.info("🗑️ Deleting file from S3: {}", objectKey);
@@ -235,9 +244,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * בדיקה אם קובץ קיים
-     */
     public boolean fileExists(String objectKey) {
         try {
             s3Client.headObject(
@@ -257,9 +263,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * קבלת מידע על קובץ
-     */
     public FileInfo getFileInfo(String objectKey) {
         try {
             var response = s3Client.headObject(
@@ -284,12 +287,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * רשימת קבצים בתיקייה
-     * 
-     * @param prefix - תחילת הנתיב (למשל: "users/5/")
-     * @return רשימת קבצים
-     */
     public List<String> listFiles(String prefix) {
         try {
             log.info("📋 Listing files with prefix: {}", prefix);
@@ -306,13 +303,11 @@ public class S3Service {
                 response = s3Client.listObjectsV2(request);
 
                 for (S3Object s3Object : response.contents()) {
-                    // רק קבצים, לא "תיקיות" (keys שמסתיימים ב-/)
                     if (!s3Object.key().endsWith("/")) {
                         files.add(s3Object.key());
                     }
                 }
 
-                // המשך לדף הבא אם יש
                 request = request.toBuilder()
                     .continuationToken(response.nextContinuationToken())
                     .build();
@@ -328,11 +323,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * מחיקת כל הקבצים בתיקייה
-     * 
-     * @param prefix - תחילת הנתיב
-     */
     public void deleteFolder(String prefix) {
         try {
             log.info("🗑️ Deleting folder: {}", prefix);
@@ -340,24 +330,21 @@ public class S3Service {
             List<String> files = listFiles(prefix);
             
             if (files.isEmpty()) {
-                log.info("No files to delete in folder: {}", prefix);
+                log.info("📂 No files to delete in folder: {}", prefix);
                 return;
             }
 
-            // מחיקה ב-batch (עד 1000 קבצים בפעם)
             List<ObjectIdentifier> toDelete = new ArrayList<>();
             
             for (String key : files) {
                 toDelete.add(ObjectIdentifier.builder().key(key).build());
                 
-                // כל 1000 קבצים - מחק
                 if (toDelete.size() == 1000) {
                     deleteObjects(toDelete);
                     toDelete.clear();
                 }
             }
 
-            // מחק את השאר
             if (!toDelete.isEmpty()) {
                 deleteObjects(toDelete);
             }
@@ -370,9 +357,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * מחיקת מספר קבצים בבת אחת
-     */
     private void deleteObjects(List<ObjectIdentifier> objects) {
         s3Client.deleteObjects(
             DeleteObjectsRequest.builder()
@@ -382,13 +366,6 @@ public class S3Service {
         );
     }
 
-    /**
-     * קבלת URL זמני לקובץ (לצפייה/הורדה)
-     * 
-     * @param objectKey - נתיב הקובץ
-     * @param expirySeconds - כמה זמן ה-URL תקף (בשניות)
-     * @return URL זמני
-     */
     public String getPresignedUrl(String objectKey, int expirySeconds) {
         try {
             log.info("🔗 Generating presigned URL for: {} (expiry: {}s)", 
@@ -416,9 +393,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * העתקת קובץ
-     */
     public void copyFile(String sourceKey, String destinationKey) {
         try {
             log.info("📋 Copying file from {} to {}", sourceKey, destinationKey);
@@ -440,9 +414,6 @@ public class S3Service {
         }
     }
 
-    /**
-     * קבלת גודל כולל של תיקייה
-     */
     public long getFolderSize(String prefix) {
         try {
             List<String> files = listFiles(prefix);
@@ -462,11 +433,6 @@ public class S3Service {
         }
     }
 
-    // ==================== Inner Classes ====================
-
-    /**
-     * מידע על קובץ
-     */
     @Data
     public static class FileInfo {
         private String objectName;
@@ -475,9 +441,6 @@ public class S3Service {
         private Instant lastModified;
         private String eTag;
 
-        /**
-         * גודל קריא (למשל: "2.5 MB")
-         */
         public String getFormattedSize() {
             if (size == null) return "Unknown";
 
