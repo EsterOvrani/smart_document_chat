@@ -81,23 +81,51 @@ const NewSessionModal = ({ onClose, onSubmit }) => {
     try {
       const response = await chatAPI.getProcessingStatus(chatId);
       
+      console.log('📊 Processing Status Response:', response.data);
+      
       if (response.data.success) {
         const data = response.data.data;
+        console.log('📊 Status Data:', {
+          isReady: data.isReady,
+          status: data.status,
+          overallProgress: data.overallProgress,
+          completedDocuments: data.completedDocuments,
+          totalDocuments: data.totalDocuments
+        });
+        
         setStatusData(data);
 
-        // אם סיימנו - סגור והודע
-        if (data.isReady || data.status === 'READY') {
+        // בדוק מספר תנאים אפשריים לסיום העיבוד
+        const isCompleted = 
+          data.isReady === true || 
+          data.status === 'READY' || 
+          data.overallProgress === 100 ||
+          (data.completedDocuments > 0 && data.completedDocuments === data.totalDocuments);
+        
+        if (isCompleted) {
+          console.log('✅ Processing completed! Closing modal and loading chat:', chatId);
+          
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
           }
           
+          // המתן שנייה כדי שהמשתמש יראה את 100%
           setTimeout(() => {
-            onSubmit(true); // הודע שסיימנו בהצלחה
+            console.log('🔄 Calling onSubmit with chatId:', chatId);
+            onSubmit(chatId);
           }, 1000);
+        } else {
+          console.log('⏳ Still processing...', {
+            isReady: data.isReady,
+            status: data.status,
+            progress: data.overallProgress,
+            docs: `${data.completedDocuments}/${data.totalDocuments}`
+          });
         }
       }
     } catch (error) {
-      console.error('Error fetching processing status:', error);
+      console.error('❌ Error fetching processing status:', error);
     }
   };
 
@@ -121,20 +149,27 @@ const NewSessionModal = ({ onClose, onSubmit }) => {
       
       const response = await chatAPI.createChat(title, files);
       
-      console.log('✅ Chat created:', response.data);
+      console.log('✅ Chat created response:', response.data);
 
       if (response.data.success) {
         const newChatId = response.data.chat.id;
+        console.log('💾 Saving chatId to state:', newChatId);
+        
         setCreatedChatId(newChatId);
         setUploading(false);
         setProcessing(true);
         
-        // התחל polling לעדכוני סטטוס
-        fetchProcessingStatus(newChatId);
+        console.log('🔄 Starting polling for chatId:', newChatId);
+        
+        // התחל polling לעדכוני סטטוס - מיד
+        await fetchProcessingStatus(newChatId);
+        
+        // המשך polling כל 2 שניות
         pollingIntervalRef.current = setInterval(() => {
           fetchProcessingStatus(newChatId);
         }, 2000);
       } else {
+        console.error('❌ Create chat failed:', response.data.error);
         alert(response.data.error || 'שגיאה ביצירת שיחה');
         setUploading(false);
       }

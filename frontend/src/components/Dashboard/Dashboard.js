@@ -94,16 +94,28 @@ const Dashboard = () => {
     setShowNewSessionModal(true);
   };
 
-  const submitNewSession = async (successfulCompletion) => {
-    // אם קיבלנו true - זה אומר שהעיבוד הסתיים בהצלחה
-    if (successfulCompletion === true) {
+  // ✅ עדכון הפונקציה לטפל ב-chatId שמוחזר
+  const submitNewSession = async (chatId) => {
+    console.log('🔔 submitNewSession called with:', chatId);
+    
+    // אם קיבלנו chatId - זה אומר שהעיבוד הסתיים בהצלחה
+    if (chatId) {
+      console.log('✅ Valid chatId received, closing modal...');
       setShowNewSessionModal(false);
       showToast('✅ שיחה חדשה נוצרה והמסמכים עובדו בהצלחה!', 'success');
       
+      console.log('🔄 Loading sessions...');
       // טען מחדש את רשימת השיחות
       await loadSessions();
       
+      console.log('🔄 Loading chat:', chatId);
+      // ✅ טען את השיחה החדשה
+      await loadSession(chatId);
+      
+      console.log('✅ Done!');
       return;
+    } else {
+      console.warn('⚠️ No chatId provided to submitNewSession');
     }
   };
 
