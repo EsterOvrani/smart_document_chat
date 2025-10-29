@@ -12,7 +12,7 @@ import com.example.backend.document.model.Document;
 import com.example.backend.document.repository.DocumentRepository;
 import com.example.backend.chat.model.Message;
 import com.example.backend.chat.repository.MessageRepository;
-import com.example.backend.shared.service.MinioService;
+import com.example.backend.shared.service.S3Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,7 +44,7 @@ public class ChatService {
     private final QdrantVectorService qdrantVectorService; // שינוי!
     private final DocumentRepository documentRepository;
     private final MessageRepository messageRepository;
-    private final MinioService minioService;
+    private final S3Service s3Service;
     
 
     // ==================== Create Chat ====================
@@ -276,7 +276,7 @@ public class ChatService {
             try {
                 log.info("📍 Step 2: Deleting files from MinIO");
                 String folderPath = String.format("users/%d/chats/%d/", user.getId(), chatId);
-                minioService.deleteFolder(folderPath);
+                s3Service.deleteFolder(folderPath);
                 log.info("✅ Files deleted from MinIO");
             } catch (Exception e) {
                 log.error("❌ Failed to delete files from MinIO", e);

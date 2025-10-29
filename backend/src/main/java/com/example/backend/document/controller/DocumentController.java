@@ -2,7 +2,7 @@ package com.example.backend.document.controller;
 
 import com.example.backend.document.dto.DocumentResponse;
 import com.example.backend.document.service.DocumentService;
-import com.example.backend.shared.service.MinioService;
+import com.example.backend.shared.service.S3Service;
 import com.example.backend.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +40,7 @@ public class DocumentController {
     // ==================== Dependencies ====================
     
     private final DocumentService documentService;
-    private final MinioService minioService;
+    private final S3Service s3Service;
 
     // ==================== Get Documents ====================
 
@@ -161,7 +161,7 @@ public class DocumentController {
             DocumentResponse document = documentService.getDocument(id, currentUser);
 
             // הורדה מ-MinIO
-            InputStream fileStream = minioService.downloadFile(document.getFilePath());
+            InputStream fileStream = s3Service.downloadFile(document.getFilePath());
 
             // הכנת headers
             HttpHeaders headers = new HttpHeaders();
@@ -204,7 +204,7 @@ public class DocumentController {
             DocumentResponse document = documentService.getDocument(id, currentUser);
 
             // יצירת URL זמני (תקף ל-1 שעה)
-            String presignedUrl = minioService.getPresignedUrl(
+            String presignedUrl = s3Service.getPresignedUrl(
                 document.getFilePath(),
                 3600  // 1 hour
             );

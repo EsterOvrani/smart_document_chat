@@ -7,7 +7,7 @@ import com.example.backend.document.mapper.DocumentMapper;
 import com.example.backend.document.model.Document;
 import com.example.backend.document.model.Document.ProcessingStatus;
 import com.example.backend.document.repository.DocumentRepository;
-import com.example.backend.shared.service.MinioService;
+import com.example.backend.shared.service.S3Service;
 import com.example.backend.shared.service.QdrantVectorService;
 import com.example.backend.user.model.User;
 import com.example.backend.shared.service.DocumentChunkingService;
@@ -49,7 +49,7 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final ChatRepository chatRepository;
     private final DocumentMapper documentMapper;
-    private final MinioService minioService;
+    private final S3Service s3Service;
     private final QdrantVectorService qdrantVectorService;
     private final EmbeddingModel embeddingModel; // Injected from QdrantConfig
     private final DocumentChunkingService chunkingService;
@@ -113,7 +113,7 @@ public class DocumentService {
             log.info("📍 Step 1: Uploading to MinIO...");
             filePath = generateFilePath(chat, originalFilename);
             
-            minioService.uploadFile(
+            s3Service.uploadFile(
                 new ByteArrayInputStream(fileBytes),  // ✅ יצור InputStream מה-bytes
                 filePath,
                 contentType,
@@ -212,7 +212,7 @@ public class DocumentService {
             
             if (filePath != null) {
                 try {
-                    minioService.deleteFile(filePath);
+                    s3Service.deleteFile(filePath);
                     log.info("Cleaned up file from MinIO: {}", filePath);
                 } catch (Exception cleanupError) {
                     log.warn("Failed to cleanup file from MinIO: {}", filePath, cleanupError);
@@ -374,7 +374,7 @@ public class DocumentService {
 
         // Delete from MinIO
         try {
-            minioService.deleteFile(document.getFilePath());
+            s3Service.deleteFile(document.getFilePath());
             log.info("Deleted file from MinIO: {}", document.getFilePath());
         } catch (Exception e) {
             log.warn("Failed to delete file from MinIO", e);
