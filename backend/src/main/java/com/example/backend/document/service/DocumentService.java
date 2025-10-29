@@ -408,6 +408,57 @@ public class DocumentService {
             .build();
     }
 
+    /**
+     * מחיקת כל המסמכים של שיחה (לפי chat ID)
+     * מוחק רק מה-DB, לא קבצים מ-MinIO
+     * 
+     * @param chatId - מזהה השיחה
+     * @param user - המשתמש (לבדיקת הרשאות)
+     * @return כמה מסמכים נמחקו
+     */
+    @Transactional
+    public int deleteAllDocumentsByChat(Long chatId, User user) {
+        try {
+            log.info("🗑️ Deleting all documents for chat: {}", chatId);
+
+            // יצירת Chat entity עם ה-ID (לשאילתה)
+            Chat chat = new Chat();
+            chat.setId(chatId);
+
+            // קבלת כל המסמכים
+            List<Document> documents = documentRepository
+                .findByChatAndActiveTrueOrderByCreatedAtDesc(chat);
+
+            if (documents.isEmpty()) {
+                log.info("📂 No documents found to delete for chat: {}", chatId);
+                return 0;
+            }
+
+            // בדיקת הרשאות - שכל המסמכים שייכים למשתמש
+            boolean unauthorized = documents.stream()
+                .anyMatch(doc -> !doc.getUser().getId().equals(user.getId()));
+            
+            if (unauthorized) {
+                throw new SecurityException("אין הרשאה למחוק מסמכים של משתמש אחר");
+            }
+
+            int count = documents.size();
+
+            // מחיקה מה-DB
+            documentRepository.deleteAll(documents);
+
+            log.info("✅ Deleted {} document entities for chat: {}", count, chatId);
+            return count;
+
+        } catch (SecurityException e) {
+            log.error("❌ Security violation: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Failed to delete documents for chat: {}", chatId, e);
+            throw new RuntimeException("Failed to delete chat documents", e);
+        }
+    }
+
     @lombok.Data
     @lombok.Builder
     public static class DocumentStatistics {

@@ -302,4 +302,31 @@ public class QdrantVectorService {
     public String createNewCollectionForFile(String fileId, String fileName) {
         return createNewCollectionForUpload(fileName);
     }
+
+    /**
+     * מחיקת קולקשין מ-Qdrant לחלוטין (לא רק מה-cache)
+     */
+    public void deleteCollection(String collectionName) {
+        if (collectionName == null || collectionName.isEmpty()) {
+            log.warn("⚠️ Cannot delete collection - name is null or empty");
+            return;
+        }
+
+        try {
+            log.info("🗑️ Deleting Qdrant collection: {}", collectionName);
+
+            // מחיקה מ-Qdrant עצמו
+            String deleteUrl = qdrantUrl + "/collections/" + collectionName;
+            restTemplate.delete(deleteUrl);
+            
+            // מחיקה מה-cache (משתמש בפונקציה הקיימת!)
+            removeCollectionFromCache(collectionName);
+
+            log.info("✅ Collection '{}' deleted successfully", collectionName);
+
+        } catch (Exception e) {
+            log.error("❌ Failed to delete collection: {}", collectionName, e);
+            throw new RuntimeException("Failed to delete collection: " + collectionName, e);
+        }
+    }
 }

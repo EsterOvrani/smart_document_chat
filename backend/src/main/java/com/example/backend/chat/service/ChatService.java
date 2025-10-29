@@ -8,14 +8,19 @@ import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.document.service.DocumentService;
 import com.example.backend.shared.service.QdrantVectorService;
 import com.example.backend.user.model.User;
+import com.example.backend.document.model.Document;
+import com.example.backend.document.repository.DocumentRepository;
+import com.example.backend.chat.model.Message;
+import com.example.backend.chat.repository.MessageRepository;
+import com.example.backend.shared.service.MinioService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.example.backend.document.model.Document;
-import com.example.backend.document.repository.DocumentRepository;
+
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
 
@@ -38,6 +43,9 @@ public class ChatService {
     private final DocumentService documentService;
     private final QdrantVectorService qdrantVectorService; // שינוי!
     private final DocumentRepository documentRepository;
+    private final MessageRepository messageRepository;
+    private final MinioService minioService;
+    
 
     // ==================== Create Chat ====================
 
@@ -238,27 +246,93 @@ public class ChatService {
     // ==================== Delete Chat ====================
 
     /**
-     * מחיקת שיחה (Soft Delete)
+     * מחיקת שיחה מלאה
      */
     public void deleteChat(Long chatId, User user) {
-        log.info("Deleting chat: {} for user: {}", chatId, user.getUsername());
+        log.info("========================================");
+        log.info("🗑️ Starting FULL deletion of chat: {}", chatId);
+        log.info("========================================");
 
         Chat chat = findChatByIdAndUser(chatId, user);
+        String collectionName = chat.getVectorCollectionName();
+        
+        int deletedFiles = 0;
+        int deletedDocuments = 0;
+        int deletedMessages = 0;
 
-        // Soft delete - רק מסמן כלא פעיל
-        chat.setActive(false);
-        chatRepository.save(chat);
-
-        // אופציונלי: הסרת קולקשין מ-cache
         try {
-            qdrantVectorService.removeCollectionFromCache(chat.getVectorCollectionName());
-            log.info("Collection removed from cache: {}", chat.getVectorCollectionName());
+            // ==================== 1. מחיקת קולקשין מ-Qdrant ====================
+            if (collectionName != null && !collectionName.isEmpty()) {
+                try {
+                    log.info("📍 Step 1: Deleting Qdrant collection");
+                    qdrantVectorService.deleteCollection(collectionName);
+                    log.info("✅ Qdrant collection deleted");
+                } catch (Exception e) {
+                    log.error("❌ Failed to delete Qdrant collection", e);
+                }
+            }
+
+            // ==================== 2. מחיקת קבצים מ-MinIO ====================
+            try {
+                log.info("📍 Step 2: Deleting files from MinIO");
+                String folderPath = String.format("users/%d/chats/%d/", user.getId(), chatId);
+                minioService.deleteFolder(folderPath);
+                log.info("✅ Files deleted from MinIO");
+            } catch (Exception e) {
+                log.error("❌ Failed to delete files from MinIO", e);
+            }
+
+            // ==================== 3. מחיקת Documents מה-DB ====================
+            try {
+                log.info("📍 Step 3: Deleting Document entities via DocumentService");
+                deletedDocuments = documentService.deleteAllDocumentsByChat(chatId, user); // ✅ קריאה לפונקציה החדשה!
+                log.info("✅ Deleted {} documents", deletedDocuments);
+            } catch (Exception e) {
+                log.error("❌ Failed to delete documents", e);
+                throw e;
+            }
+
+            // ==================== 4. מחיקת Messages מה-DB ====================
+            try {
+                log.info("📍 Step 4: Deleting Message entities");
+                List<Message> messages = messageRepository.findByChatOrderByCreatedAtAsc(chat);
+                deletedMessages = messages.size();
+                messageRepository.deleteAll(messages);
+                log.info("✅ Deleted {} messages", deletedMessages);
+            } catch (Exception e) {
+                log.error("❌ Failed to delete messages", e);
+                throw e;
+            }
+
+            // ==================== 5. מחיקת Chat מה-DB ====================
+            try {
+                log.info("📍 Step 5: Deleting Chat entity");
+                chatRepository.delete(chat);
+                log.info("✅ Chat deleted");
+            } catch (Exception e) {
+                log.error("❌ Failed to delete chat", e);
+                throw e;
+            }
+
+            // ==================== סיכום ====================
+            log.info("========================================");
+            log.info("✅ FULL DELETION COMPLETED for chat: {}", chatId);
+            log.info("📊 Summary:");
+            log.info("   - Qdrant collection: {}", collectionName != null ? "Deleted" : "N/A");
+            log.info("   - Files from MinIO: Deleted");
+            log.info("   - Document entities: {}", deletedDocuments);
+            log.info("   - Message entities: {}", deletedMessages);
+            log.info("   - Chat entity: Deleted");
+            log.info("========================================");
+
         } catch (Exception e) {
-            log.warn("Failed to remove collection from cache: {}", 
-                chat.getVectorCollectionName(), e);
+            log.error("========================================");
+            log.error("❌ CRITICAL ERROR during deletion", e);
+            log.error("========================================");
+            throw new RuntimeException("נכשל במחיקת השיחה: " + e.getMessage(), e);
         }
     }
-
+        
     // ==================== Helper Methods ====================
 
     /**
