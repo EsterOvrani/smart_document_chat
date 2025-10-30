@@ -21,7 +21,29 @@ services:
     networks:
       - app-network
 
-  # ==================== Qdrant Vector Database ====================
+  # ==================== Redis Cache ==================== ✨ NEW!
+  redis:
+    image: redis:7-alpine
+    container_name: redis-smart-doc-chat
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    # Command explanation:
+    # --appendonly yes        → Persist data to disk
+    # --maxmemory 256mb       → Limit Redis to 256MB RAM
+    # --maxmemory-policy allkeys-lru → When full, evict least recently used keys
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== Qdrant ====================
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant-smart-doc-chat
@@ -36,8 +58,6 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-
-
 
   # ==================== Backend (Spring Boot) ====================
   backend:
@@ -57,19 +77,22 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6334
     
+      # Redis ✨ NEW!
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
       # Frontend URL
       FRONTEND_URL: http://localhost
-      
-
-      
+    
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:                 # ✨ NEW dependency!
+        condition: service_healthy
       qdrant:
         condition: service_started
-
     networks:
       - app-network
     restart: unless-stopped
@@ -111,6 +134,8 @@ networks:
 # ==================== Volumes ====================
 volumes:
   postgres_data:
+    driver: local
+  redis_data:              # ✨ NEW volume for Redis persistence
     driver: local
   qdrant_storage:
     driver: local

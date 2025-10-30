@@ -190,6 +190,33 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ==================== Redis Cache Dependencies ==================== -->
+
+        <!-- Spring Data Redis - Core Redis support -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Spring Cache Abstraction - Provides @Cacheable, @CacheEvict annotations -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
+        <!-- Lettuce - Async Redis client (thread-safe, high-performance) -->
+        <!-- Already included in spring-boot-starter-data-redis, but can be explicit -->
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+        </dependency>
+
+        <!-- Jackson Java 8 Date/Time support - For LocalDateTime serialization -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
     </dependencies>
 
     <build>
