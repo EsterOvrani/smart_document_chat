@@ -1,4 +1,4 @@
-package com.example.backend.shared.config;
+package com.example.backend.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -18,11 +18,11 @@ public class QdrantProperties {
     // Embedding configuration
     private int dimension = 3072; // OpenAI text-embedding-3-large dimension
     private String distance = "Cosine"; // Distance metric for similarity search
-    
+
     // ⭐ הוסף את השורות האלה - פרמטרי חיפוש
     private int defaultMaxResults = 5;
     private double defaultMinScore = 0.5;
-    
+
     // ⭐ הוסף את השורות האלה - HNSW optimization לדיוק
     private int hnswM = 16;
     private int hnswEfConstruct = 200;  // גבוה יותר = דיוק טוב יותר

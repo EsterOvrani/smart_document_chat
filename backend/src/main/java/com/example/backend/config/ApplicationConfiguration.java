@@ -1,4 +1,4 @@
-package com.example.backend.shared.config;
+package com.example.backend.config;
 
 
 import com.example.backend.user.repository.UserRepository;

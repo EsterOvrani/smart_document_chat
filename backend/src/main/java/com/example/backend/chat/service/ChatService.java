@@ -6,13 +6,13 @@ import com.example.backend.chat.model.Chat;
 import com.example.backend.chat.model.Chat.ChatStatus;
 import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.document.service.DocumentService;
-import com.example.backend.shared.service.QdrantVectorService;
+import com.example.backend.common.infrastructure.vectordb.QdrantVectorService;
 import com.example.backend.user.model.User;
 import com.example.backend.document.model.Document;
 import com.example.backend.document.repository.DocumentRepository;
 import com.example.backend.chat.model.Message;
 import com.example.backend.chat.repository.MessageRepository;
-import com.example.backend.shared.service.S3Service;
+import com.example.backend.common.infrastructure.storage.S3Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +27,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Service לניהול שיחות
- * עדכון לשימוש ב-QdrantVectorService במקום QdrantService
+ * Service for managing chats
+ * Uses QdrantVectorService for vector operations
  */
 @Service
 @RequiredArgsConstructor
@@ -37,11 +37,11 @@ import java.util.List;
 public class ChatService {
 
     // ==================== Dependencies ====================
-    
+
     private final ChatRepository chatRepository;
     private final ChatMapper chatMapper;
     private final DocumentService documentService;
-    private final QdrantVectorService qdrantVectorService; // שינוי!
+    private final QdrantVectorService qdrantVectorService;
     private final DocumentRepository documentRepository;
     private final MessageRepository messageRepository;
     private final S3Service s3Service;
@@ -50,7 +50,7 @@ public class ChatService {
     // ==================== Create Chat ====================
 
     /**
-     * יצירת שיחה חדשה עם מסמכים
+     * Create a new chat with documents
      */
     public ChatResponse createChat(CreateChatRequest request, User user) {
         log.info("========================================");
@@ -82,8 +82,7 @@ public class ChatService {
         chat.setPendingDocuments(request.getFileCount());
 
         // ==================== Create Qdrant Collection using QdrantVectorService ====================
-            
-        // ✅ העבר את שם השיחה במקום מספר הקבצים
+
         String collectionName = qdrantVectorService.createNewCollectionForUpload(request.getTitle());
         chat.setVectorCollectionName(collectionName);
 
@@ -132,7 +131,7 @@ public class ChatService {
     // ==================== Get Chats ====================
 
     /**
-     * קבלת כל השיחות של משתמש
+     * Get all chats for a user
      */
     public ChatListResponse getAllChats(User user) {
         log.info("Getting all chats for user: {}", user.getUsername());
@@ -155,7 +154,7 @@ public class ChatService {
     }
 
     /**
-     * קבלת שיחה ספציפית
+     * Get a specific chat
      */
     public ChatResponse getChat(Long chatId, User user) {
         log.info("Getting chat: {} for user: {}", chatId, user.getUsername());
@@ -174,7 +173,7 @@ public class ChatService {
     }
 
     /**
-     * חיפוש שיחות
+     * Search chats
      */
     public ChatListResponse searchChats(String searchTerm, User user) {
         log.info("Searching chats with term: {} for user: {}", searchTerm, user.getUsername());
@@ -196,7 +195,7 @@ public class ChatService {
     // ==================== Update Chat ====================
 
     /**
-     * עדכון כותרת שיחה
+     * Update chat title
      */
     public ChatResponse updateChatTitle(Long chatId, String newTitle, User user) {
         log.info("Updating chat: {} title to: {}", chatId, newTitle);
@@ -210,7 +209,7 @@ public class ChatService {
     }
 
     /**
-     * עדכון סטטוס שיחה
+     * Update chat status
      */
     public void updateChatStatus(Long chatId) {
         log.info("Updating status for chat: {}", chatId);
@@ -229,7 +228,7 @@ public class ChatService {
     }
 
     /**
-     * סימון שיחה כנכשלת
+     * Mark chat as failed
      */
     public void markChatAsFailed(Long chatId, String errorMessage) {
         log.error("Marking chat: {} as FAILED. Error: {}", chatId, errorMessage);
@@ -246,7 +245,7 @@ public class ChatService {
     // ==================== Delete Chat ====================
 
     /**
-     * מחיקת שיחה מלאה
+     * Delete entire chat
      */
     public void deleteChat(Long chatId, User user) {
         log.info("========================================");
@@ -261,7 +260,7 @@ public class ChatService {
         int deletedMessages = 0;
 
         try {
-            // ==================== 1. מחיקת קולקשין מ-Qdrant ====================
+            // ==================== 1. Delete Qdrant Collection ====================
             if (collectionName != null && !collectionName.isEmpty()) {
                 try {
                     log.info("📍 Step 1: Deleting Qdrant collection");
@@ -272,7 +271,7 @@ public class ChatService {
                 }
             }
 
-            // ==================== 2. מחיקת קבצים מ-MinIO ====================
+            // ==================== 2. Delete Files from S3 ====================
             try {
                 log.info("📍 Step 2: Deleting files from MinIO");
                 String folderPath = String.format("users/%d/chats/%d/", user.getId(), chatId);
@@ -282,17 +281,17 @@ public class ChatService {
                 log.error("❌ Failed to delete files from MinIO", e);
             }
 
-            // ==================== 3. מחיקת Documents מה-DB ====================
+            // ==================== 3. Delete Documents from DB ====================
             try {
                 log.info("📍 Step 3: Deleting Document entities via DocumentService");
-                deletedDocuments = documentService.deleteAllDocumentsByChat(chatId, user); // ✅ קריאה לפונקציה החדשה!
+                deletedDocuments = documentService.deleteAllDocumentsByChat(chatId, user);
                 log.info("✅ Deleted {} documents", deletedDocuments);
             } catch (Exception e) {
                 log.error("❌ Failed to delete documents", e);
                 throw e;
             }
 
-            // ==================== 4. מחיקת Messages מה-DB ====================
+            // ==================== 4. Delete Messages from DB ====================
             try {
                 log.info("📍 Step 4: Deleting Message entities");
                 List<Message> messages = messageRepository.findByChatOrderByCreatedAtAsc(chat);
@@ -304,7 +303,7 @@ public class ChatService {
                 throw e;
             }
 
-            // ==================== 5. מחיקת Chat מה-DB ====================
+            // ==================== 5. Delete Chat from DB ====================
             try {
                 log.info("📍 Step 5: Deleting Chat entity");
                 chatRepository.delete(chat);
@@ -314,7 +313,7 @@ public class ChatService {
                 throw e;
             }
 
-            // ==================== סיכום ====================
+            // ==================== Summary ====================
             log.info("========================================");
             log.info("✅ FULL DELETION COMPLETED for chat: {}", chatId);
             log.info("📊 Summary:");
@@ -336,7 +335,7 @@ public class ChatService {
     // ==================== Helper Methods ====================
 
     /**
-     * מציאת שיחה לפי ID + בדיקת הרשאות
+     * Find chat by ID with permission check
      */
     private Chat findChatByIdAndUser(Long chatId, User user) {
         return chatRepository.findByIdAndUserAndActiveTrue(chatId, user)
@@ -344,7 +343,7 @@ public class ChatService {
     }
 
     /**
-     * ספירת שיחות לפי סטטוס
+     * Count chats by status
      */
     private int countByStatus(List<Chat> chats, ChatStatus status) {
         return (int) chats.stream()
@@ -353,7 +352,7 @@ public class ChatService {
     }
 
     /**
-     * בדיקת תקינות בקשה
+     * Validate create chat request
      */
     private void validateCreateChatRequest(CreateChatRequest request) {
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) {
@@ -378,7 +377,7 @@ public class ChatService {
     }
 
     /**
-     * בדיקת תקינות משתמש
+     * Validate user
      */
     private void validateUser(User user) {
         if (user == null) {
@@ -393,7 +392,7 @@ public class ChatService {
     // ==================== Statistics ====================
 
     /**
-     * סטטיסטיקות על שיחות המשתמש
+     * Get user chat statistics
      */
     public ChatListResponse.GeneralStatistics getUserStatistics(User user) {
         log.info("Getting statistics for user: {}", user.getUsername());
@@ -424,7 +423,7 @@ public class ChatService {
 
     // ==================== Processing Status ====================
     /**
-     * קבלת סטטוס עיבוד מפורט של שיחה
+     * Get detailed processing status for a chat
      */
     public ProcessingStatusResponse getProcessingStatus(Long chatId, User user) {
         log.info("Getting processing status for chat: {}", chatId);
@@ -522,7 +521,7 @@ public class ChatService {
     }
 
     /**
-     * קביעת שלב העיבוד לפי אחוז ההתקדמות
+     * Determine processing stage based on progress percentage
      */
     private String getProcessingStage(Integer progress) {
         if (progress == null || progress < 10) {
@@ -539,7 +538,7 @@ public class ChatService {
     }
 
     /**
-     * פורמט גודל קובץ קריא
+     * Format file size to human-readable string
      */
     private String formatFileSize(Long bytes) {
         if (bytes == null || bytes == 0) {

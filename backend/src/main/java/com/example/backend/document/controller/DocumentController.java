@@ -2,7 +2,7 @@ package com.example.backend.document.controller;
 
 import com.example.backend.document.dto.DocumentResponse;
 import com.example.backend.document.service.DocumentService;
-import com.example.backend.shared.service.S3Service;
+import com.example.backend.common.infrastructure.storage.S3Service;
 import com.example.backend.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,14 +21,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Controller לניהול מסמכים
- * 
+ * Controller for managing documents
+ *
  * Endpoints:
- * - GET    /api/documents/chat/{chatId}  - מסמכים של שיחה
- * - GET    /api/documents/{id}           - פרטי מסמך
- * - GET    /api/documents/{id}/download  - הורדת מסמך
- * - DELETE /api/documents/{id}           - מחיקת מסמך
- * - GET    /api/documents/chat/{chatId}/stats - סטטיסטיקות
+ * - GET    /api/documents/chat/{chatId}  - Get documents for chat
+ * - GET    /api/documents/{id}           - Get document details
+ * - GET    /api/documents/{id}/download  - Download document
+ * - DELETE /api/documents/{id}           - Delete document
+ * - GET    /api/documents/chat/{chatId}/stats - Get statistics
  */
 @RestController
 @RequestMapping("/api/documents")
@@ -45,10 +45,10 @@ public class DocumentController {
     // ==================== Get Documents ====================
 
     /**
-     * קבלת כל המסמכים של שיחה
-     * 
+     * Get all documents for a chat
+     *
      * GET /api/documents/chat/{chatId}
-     * 
+     *
      * Response: List<DocumentResponse>
      */
     @GetMapping("/chat/{chatId}")
@@ -78,10 +78,10 @@ public class DocumentController {
     }
 
     /**
-     * קבלת מסמכים מעובדים בלבד
-     * 
+     * Get processed documents only
+     *
      * GET /api/documents/chat/{chatId}/processed
-     * 
+     *
      * Response: List<DocumentResponse>
      */
     @GetMapping("/chat/{chatId}/processed")
@@ -111,10 +111,10 @@ public class DocumentController {
     }
 
     /**
-     * קבלת מסמך ספציפי
-     * 
+     * Get specific document
+     *
      * GET /api/documents/{id}
-     * 
+     *
      * Response: DocumentResponse
      */
     @GetMapping("/{id}")
@@ -146,24 +146,24 @@ public class DocumentController {
     // ==================== Download Document ====================
 
     /**
-     * הורדת מסמך מקורי
-     * 
+     * Download original document
+     *
      * GET /api/documents/{id}/download
-     * 
+     *
      * Response: PDF file
      */
     @GetMapping("/{id}/download")
     public ResponseEntity<?> downloadDocument(@PathVariable Long id) {
         try {
             User currentUser = getCurrentUser();
-            
-            // קבלת פרטי המסמך
+
+            // Get document details
             DocumentResponse document = documentService.getDocument(id, currentUser);
 
-            // הורדה מ-MinIO
+            // Download from S3
             InputStream fileStream = s3Service.downloadFile(document.getFilePath());
 
-            // הכנת headers
+            // Prepare headers
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_PDF);
             headers.setContentDispositionFormData(
@@ -189,21 +189,21 @@ public class DocumentController {
     }
 
     /**
-     * קבלת URL זמני להורדה
-     * 
+     * Get temporary download URL
+     *
      * GET /api/documents/{id}/download-url
-     * 
+     *
      * Response: { "url": "..." }
      */
     @GetMapping("/{id}/download-url")
     public ResponseEntity<Map<String, Object>> getDownloadUrl(@PathVariable Long id) {
         try {
             User currentUser = getCurrentUser();
-            
-            // קבלת פרטי המסמך
+
+            // Get document details
             DocumentResponse document = documentService.getDocument(id, currentUser);
 
-            // יצירת URL זמני (תקף ל-1 שעה)
+            // Create temporary URL (valid for 1 hour)
             String presignedUrl = s3Service.getPresignedUrl(
                 document.getFilePath(),
                 3600  // 1 hour
@@ -231,10 +231,10 @@ public class DocumentController {
     // ==================== Delete Document ====================
 
     /**
-     * מחיקת מסמך
-     * 
+     * Delete document
+     *
      * DELETE /api/documents/{id}
-     * 
+     *
      * Response: success message
      */
     @DeleteMapping("/{id}")
@@ -264,10 +264,10 @@ public class DocumentController {
     // ==================== Statistics ====================
 
     /**
-     * סטטיסטיקות מסמכים לשיחה
-     * 
+     * Get document statistics for chat
+     *
      * GET /api/documents/chat/{chatId}/stats
-     * 
+     *
      * Response: DocumentStatistics
      */
     @GetMapping("/chat/{chatId}/stats")
@@ -296,17 +296,17 @@ public class DocumentController {
     // ==================== Helper Methods ====================
 
     /**
-     * קבלת המשתמש המחובר
+     * Get currently authenticated user
      */
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        
+
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new SecurityException("משתמש לא מחובר");
         }
 
         Object principal = authentication.getPrincipal();
-        
+
         if (!(principal instanceof User)) {
             throw new SecurityException("משתמש לא תקין");
         }
@@ -315,7 +315,7 @@ public class DocumentController {
     }
 
     /**
-     * בניית תגובת שגיאה
+     * Build error response
      */
     private ResponseEntity<Map<String, Object>> buildErrorResponse(
             HttpStatus status, String message) {

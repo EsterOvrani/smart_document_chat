@@ -10,7 +10,7 @@ const api = axios.create({
   }
 });
 
-// ✅ Interceptor - הוסף טוקן לכל בקשה
+// Interceptor - add token to every request
 api.interceptors.request.use(
   config => {
     const token = localStorage.getItem('token');
@@ -33,7 +33,7 @@ api.interceptors.request.use(
   }
 );
 
-// ✅ Interceptor לטיפול בשגיאות
+// Interceptor for error handling
 api.interceptors.response.use(
   response => {
     console.log('✅ API Response:', {
@@ -81,12 +81,12 @@ export const authAPI = {
   checkEmail: (email) => api.get(`/auth/check-email/${encodeURIComponent(email)}`)
 };
 
-// ==================== Chat API (חדש!) ====================
+// ==================== Chat API ====================
 export const chatAPI = {
   /**
-   * יצירת שיחה חדשה
-   * @param {string} title - כותרת השיחה
-   * @param {File[]} files - קבצי PDF
+   * Create new chat
+   * @param {string} title - chat title
+   * @param {File[]} files - PDF files
    */
   createChat: (title, files) => {
     const formData = new FormData();
@@ -104,41 +104,41 @@ export const chatAPI = {
   },
 
   /**
-   * קבלת כל השיחות
+   * Get all chats
    */
   getAllChats: () => api.get('/chats'),
 
   /**
-   * חיפוש שיחות
+   * Search chats
    */
   searchChats: (searchTerm) => api.get('/chats/search', {
     params: { q: searchTerm }
   }),
 
   /**
-   * קבלת שיחה ספציפית
+   * Get specific chat
    */
   getChat: (chatId) => api.get(`/chats/${chatId}`),
 
   /**
-   * עדכון כותרת שיחה
+   * Update chat title
    */
   updateChatTitle: (chatId, newTitle) => api.put(`/chats/${chatId}`, {
     title: newTitle
   }),
 
   /**
-   * מחיקת שיחה
+   * Delete chat
    */
   deleteChat: (chatId) => api.delete(`/chats/${chatId}`),
 
   /**
-   * קבלת סטטוס עיבוד מפורט
+   * Get detailed processing status
    */
   getProcessingStatus: (chatId) => api.get(`/chats/${chatId}/processing-status`),
 
   /**
-   * שאילת שאלה
+   * Ask a question
    */
   askQuestion: (chatId, question, contextMessageCount = 5) => {
     return api.post(`/chats/${chatId}/ask`, {
@@ -149,35 +149,35 @@ export const chatAPI = {
   },
 
   /**
-   * קבלת היסטוריית הודעות
+   * Get message history
    */
   getChatMessages: (chatId) => api.get(`/chats/${chatId}/messages`),
 
   /**
-   * סטטיסטיקות
+   * Get statistics
    */
   getUserStatistics: () => api.get('/chats/statistics')
 };
 
-// ==================== Document API (חדש!) ====================
+// ==================== Document API ====================
 export const documentAPI = {
   /**
-   * קבלת מסמכים של שיחה
+   * Get documents for a chat
    */
   getDocumentsByChat: (chatId) => api.get(`/documents/chat/${chatId}`),
 
   /**
-   * קבלת מסמכים מעובדים בלבד
+   * Get processed documents only
    */
   getProcessedDocuments: (chatId) => api.get(`/documents/chat/${chatId}/processed`),
 
   /**
-   * קבלת מסמך ספציפי
+   * Get specific document
    */
   getDocument: (documentId) => api.get(`/documents/${documentId}`),
 
   /**
-   * הורדת מסמך
+   * Download document
    */
   downloadDocument: (documentId) => {
     return api.get(`/documents/${documentId}/download`, {
@@ -186,17 +186,17 @@ export const documentAPI = {
   },
 
   /**
-   * קבלת URL זמני להורדה
+   * Get temporary download URL
    */
   getDownloadUrl: (documentId) => api.get(`/documents/${documentId}/download-url`),
 
   /**
-   * מחיקת מסמך
+   * Delete document
    */
   deleteDocument: (documentId) => api.delete(`/documents/${documentId}`),
 
   /**
-   * סטטיסטיקות מסמכים
+   * Get document statistics
    */
   getDocumentStatistics: (chatId) => api.get(`/documents/chat/${chatId}/stats`)
 };

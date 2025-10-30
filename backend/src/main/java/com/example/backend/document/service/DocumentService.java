@@ -7,10 +7,10 @@ import com.example.backend.document.mapper.DocumentMapper;
 import com.example.backend.document.model.Document;
 import com.example.backend.document.model.Document.ProcessingStatus;
 import com.example.backend.document.repository.DocumentRepository;
-import com.example.backend.shared.service.S3Service;
-import com.example.backend.shared.service.QdrantVectorService;
+import com.example.backend.common.infrastructure.storage.S3Service;
+import com.example.backend.common.infrastructure.vectordb.QdrantVectorService;
 import com.example.backend.user.model.User;
-import com.example.backend.shared.service.DocumentChunkingService;
+import com.example.backend.common.infrastructure.document.DocumentChunkingService;
 import com.example.backend.document.model.Document;
 
 // LangChain4j imports
@@ -58,8 +58,8 @@ public class DocumentService {
     private static final int CHUNK_OVERLAP = 200;
 
     /**
-     * עיבוד מסמך - נקודת כניסה
-     * ⚠️ לא @Async כאן! נעביר את העבודה לפונקציה פנימית
+     * Process document - entry point
+     * Note: Not @Async here - delegates work to internal async function
      */
     public void processDocument(MultipartFile file, Chat chat) {
         log.info("🔵 ========================================");
@@ -70,7 +70,7 @@ public class DocumentService {
         log.info("🔵 ========================================");
 
         try {
-            // ✅ שלב 1: קרא את תוכן הקובץ לזיכרון לפני ה-Async
+            // Step 1: Read file content to memory before async processing
             byte[] fileBytes = file.getBytes();
             String originalFilename = file.getOriginalFilename();
             String contentType = file.getContentType();
@@ -78,7 +78,7 @@ public class DocumentService {
             
             log.info("✅ File read to memory: {} bytes", fileBytes.length);
             
-            // ✅ שלב 2: העבר את הנתונים לפונקציה Async
+            // Step 2: Pass data to async function
             processDocumentAsync(fileBytes, originalFilename, contentType, fileSize, chat);
             
         } catch (IOException e) {
@@ -88,7 +88,7 @@ public class DocumentService {
     }
 
     /**
-     * עיבוד מסמך בפועל - רץ בתהליך נפרד
+     * Actual document processing - runs in separate thread
      */
     @Async
     public void processDocumentAsync(
@@ -109,35 +109,35 @@ public class DocumentService {
         String filePath = null;
 
         try {
-            // ✅ 1. Upload to MinIO - יצור InputStream מה-bytes
+            // Step 1: Upload to S3 - create InputStream from bytes
             log.info("📍 Step 1: Uploading to MinIO...");
             filePath = generateFilePath(chat, originalFilename);
             
             s3Service.uploadFile(
-                new ByteArrayInputStream(fileBytes),  // ✅ יצור InputStream מה-bytes
+                new ByteArrayInputStream(fileBytes),
                 filePath,
                 contentType,
                 fileSize
             );
             log.info("✅ File uploaded to MinIO successfully");
 
-            // ✅ 2. Create Document Entity
+            // Step 2: Create Document Entity
             log.info("📍 Step 2: Creating Document entity...");
             document = createDocumentEntity(originalFilename, fileSize, chat, filePath, fileBytes);
             document = documentRepository.save(document);
             log.info("✅ Document entity saved with ID: {} and size: {}", document.getId(), fileSize);
 
-            // ✅ 3. Validate (בדיקה על ה-bytes, לא על MultipartFile)
+            // Step 3: Validate (check bytes, not MultipartFile)
             validateFile(originalFilename, fileBytes);
             document.startProcessing();
             document = documentRepository.save(document);
 
-            // ✅ 4. Parse PDF using LangChain4j - יצור InputStream מה-bytes
+            // Step 4: Parse PDF using LangChain4j - create InputStream from bytes
             log.info("📍 Step 4: Parsing PDF with LangChain4j...");
             DocumentParser parser = new ApachePdfBoxDocumentParser();
             
-            dev.langchain4j.data.document.Document langchainDoc = 
-                parser.parse(new ByteArrayInputStream(fileBytes));  // ✅ יצור InputStream מה-bytes
+            dev.langchain4j.data.document.Document langchainDoc =
+                parser.parse(new ByteArrayInputStream(fileBytes));
                 
             String text = langchainDoc.text();
             
@@ -145,7 +145,7 @@ public class DocumentService {
             document.setCharacterCount(characterCount);
             log.info("✅ Extracted {} characters from PDF", characterCount);
 
-            // ✅ 5. Split into chunks
+            // Step 5: Split into chunks
             log.info("📍 Step 5: Splitting into chunks...");
             List<TextSegment> segments = chunkingService.chunkDocument(
                 text, 
@@ -157,7 +157,7 @@ public class DocumentService {
             document.setChunkCount(chunkCount);
             log.info("✅ Split into {} chunks", chunkCount);
 
-            // ✅ 6. Store in Qdrant
+            // Step 6: Store in Qdrant
             log.info("📍 Step 6: Storing in Qdrant...");
             String collectionName = chat.getVectorCollectionName();
             EmbeddingStore<TextSegment> embeddingStore = 
@@ -187,7 +187,7 @@ public class DocumentService {
                 log.debug("Processed chunk {}/{}", processed, segments.size());
             }
 
-            // ✅ 7. Mark as Completed
+            // Step 7: Mark as Completed
             document.markAsCompleted(characterCount, chunkCount);
             documentRepository.save(document);
             
@@ -261,7 +261,7 @@ public class DocumentService {
     }
 
     /**
-     * ✅ בדיקת תקינות על ה-bytes, לא על MultipartFile
+     * Validate file using bytes, not MultipartFile
      */
     private void validateFile(String filename, byte[] fileBytes) {
         if (fileBytes == null || fileBytes.length == 0) {
@@ -409,23 +409,23 @@ public class DocumentService {
     }
 
     /**
-     * מחיקת כל המסמכים של שיחה (לפי chat ID)
-     * מוחק רק מה-DB, לא קבצים מ-MinIO
-     * 
-     * @param chatId - מזהה השיחה
-     * @param user - המשתמש (לבדיקת הרשאות)
-     * @return כמה מסמכים נמחקו
+     * Delete all documents for a chat (by chat ID)
+     * Deletes only from DB, not files from S3
+     *
+     * @param chatId - chat identifier
+     * @param user - user (for permission check)
+     * @return number of documents deleted
      */
     @Transactional
     public int deleteAllDocumentsByChat(Long chatId, User user) {
         try {
             log.info("🗑️ Deleting all documents for chat: {}", chatId);
 
-            // יצירת Chat entity עם ה-ID (לשאילתה)
+            // Create Chat entity with ID (for query)
             Chat chat = new Chat();
             chat.setId(chatId);
 
-            // קבלת כל המסמכים
+            // Get all documents
             List<Document> documents = documentRepository
                 .findByChatAndActiveTrueOrderByCreatedAtDesc(chat);
 
@@ -434,7 +434,7 @@ public class DocumentService {
                 return 0;
             }
 
-            // בדיקת הרשאות - שכל המסמכים שייכים למשתמש
+            // Permission check - ensure all documents belong to user
             boolean unauthorized = documents.stream()
                 .anyMatch(doc -> !doc.getUser().getId().equals(user.getId()));
             
@@ -444,7 +444,7 @@ public class DocumentService {
 
             int count = documents.size();
 
-            // מחיקה מה-DB
+            // Delete from DB
             documentRepository.deleteAll(documents);
 
             log.info("✅ Deleted {} document entities for chat: {}", count, chatId);

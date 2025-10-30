@@ -5,7 +5,7 @@ import com.example.backend.auth.dto.RegisterUserDto;
 import com.example.backend.auth.dto.VerifyUserDto;
 import com.example.backend.user.model.User;
 import com.example.backend.user.repository.UserRepository;
-import com.example.backend.user.service.EmailService;
+import com.example.backend.common.infrastructure.email.EmailService;
 import jakarta.mail.MessagingException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;

@@ -8,7 +8,7 @@ import com.example.backend.chat.model.Message;
 import com.example.backend.chat.model.Message.MessageRole;
 import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.chat.repository.MessageRepository;
-import com.example.backend.shared.service.QdrantVectorService;
+import com.example.backend.common.infrastructure.vectordb.QdrantVectorService;
 import com.example.backend.user.model.User;
 
 // LangChain4j imports
@@ -38,8 +38,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Service לטיפול בשאלות ותשובות AI
- * משתמש ב-LangChain4j במקום QdrantService ו-OpenAIService
+ * Service for handling AI questions and answers
+ * Uses LangChain4j for AI operations
  */
 @Service
 @RequiredArgsConstructor
@@ -64,7 +64,7 @@ public class ChatAIService {
     // ==================== Ask Question ====================
 
     /**
-     * שאילת שאלה - נקודת הכניסה הראשית
+     * Ask a question - main entry point
      */
     public AnswerResponse askQuestion(Long chatId, AskQuestionRequest request, User user) {
         log.info("Processing question for chat: {} from user: {}", 
@@ -168,7 +168,7 @@ public class ChatAIService {
     // ==================== Helper Methods ====================
 
     /**
-     * בדיקת תקינות שיחה והרשאות
+     * Validate chat and permissions
      */
     private Chat validateAndGetChat(Long chatId, User user) {
         return chatRepository.findByIdAndUserAndActiveTrue(chatId, user)
@@ -176,7 +176,7 @@ public class ChatAIService {
     }
 
     /**
-     * בדיקת תקינות בקשה
+     * Validate request
      */
     private void validateRequest(AskQuestionRequest request) {
         request.validateContextCount();
@@ -187,7 +187,7 @@ public class ChatAIService {
     }
 
     /**
-     * שמירת שאלת המשתמש
+     * Save user question
      */
     private Message saveUserMessage(String question, Chat chat, User user) {
         Message message = new Message();
@@ -201,7 +201,7 @@ public class ChatAIService {
     }
 
     /**
-     * קבלת הקשר - הודעות אחרונות
+     * Get context - recent messages
      */
     private List<Message> getContextMessages(Chat chat, int count) {
         if (count <= 0) {
@@ -218,11 +218,11 @@ public class ChatAIService {
     }
 
     /**
-     * חיפוש מסמכים רלוונטיים ב-Qdrant דרך LangChain4j
+     * Search relevant documents in Qdrant via LangChain4j
      */
     private List<RelevantDocument> searchRelevantDocuments(Chat chat, String question) {
         try {
-            // קבלת ה-EmbeddingStore של השיחה
+            // Get the EmbeddingStore for the chat
             EmbeddingStore<TextSegment> embeddingStore = 
                 qdrantVectorService.getEmbeddingStoreForCollection(chat.getVectorCollectionName());
 
@@ -231,14 +231,14 @@ public class ChatAIService {
                 return new ArrayList<>();
             }
 
-            // יצירת embedding לשאלה
+            // Create embedding for the question
             Embedding queryEmbedding = embeddingModel.embed(question).content();
 
-            // חיפוש מסמכים רלוונטיים
+            // Search for relevant documents
             EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                 .queryEmbedding(queryEmbedding)
                 .maxResults(MAX_RELEVANT_CHUNKS)
-                .minScore(0.5) // רק תוצאות עם דמיון מעל 0.7
+                .minScore(0.5) // Only results with similarity above 0.5
                 .build();
 
             EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchRequest);
@@ -246,14 +246,14 @@ public class ChatAIService {
 
             log.info("Found {} relevant chunks", matches.size());
 
-            // המרה למבנה נתונים פנימי
+            // Convert to internal data structure
             List<RelevantDocument> relevantDocs = new ArrayList<>();
             for (EmbeddingMatch<TextSegment> match : matches) {
                 RelevantDocument doc = new RelevantDocument();
                 doc.setText(match.embedded().text());
                 doc.setScore(match.score());
                 
-                // נסה לחלץ metadata
+                // Try to extract metadata
                 if (match.embedded().metadata() != null) {
                     String docIdStr = match.embedded().metadata().getString("document_id");
                     if (docIdStr != null) {
@@ -278,7 +278,7 @@ public class ChatAIService {
     }
 
     /**
-     * בניית הודעות לצ'אט עבור LangChain4j - דו-לשוני
+     * Build chat messages for LangChain4j - bilingual support
      */
     private List<dev.langchain4j.data.message.ChatMessage> buildChatMessages(
             String question,
@@ -287,7 +287,7 @@ public class ChatAIService {
 
         List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
 
-        // ✅ הודעת מערכת דו-לשונית
+        // Bilingual system message
         messages.add(SystemMessage.from(
             "אתה עוזר AI שעונה על שאלות על סמך מסמכים. " +
             "חשוב: ענה באותה שפה שבה נשאלת השאלה! " +
@@ -302,7 +302,7 @@ public class ChatAIService {
             "If there isn't enough information, say so clearly."
         ));
 
-        // הקשר מההיסטוריה
+        // Context from history
         for (Message msg : contextMessages) {
             if (msg.getRole() == MessageRole.USER) {
                 messages.add(UserMessage.from(msg.getContent()));
@@ -311,7 +311,7 @@ public class ChatAIService {
             }
         }
 
-        // מידע רלוונטי מהמסמכים (דו-לשוני)
+        // Relevant information from documents (bilingual)
         StringBuilder context = new StringBuilder();
         context.append("מידע רלוונטי מהמסמכים / Relevant information from documents:\n\n");
         
@@ -324,14 +324,14 @@ public class ChatAIService {
             ));
         }
 
-        // השאלה עם ההקשר
+        // Question with context
         messages.add(UserMessage.from(context.toString() + "\nשאלה / Question: " + question));
 
         return messages;
     }
     
     /**
-     * שמירת תשובת ה-AI
+     * Save AI response
      */
     private Message saveAssistantMessage(
             String answer,
@@ -352,7 +352,7 @@ public class ChatAIService {
         message.setResponseTimeMs(responseTime);
         message.setCreatedAt(LocalDateTime.now());
 
-        // המרת sources ל-String
+        // Convert sources to String
         if (sources != null && !sources.isEmpty()) {
             String sourcesStr = sources.stream()
                 .map(AnswerResponse.Source::getDocumentName)
@@ -364,7 +364,7 @@ public class ChatAIService {
     }
 
     /**
-     * בניית רשימת מקורות
+     * Build sources list
      */
     private List<AnswerResponse.Source> buildSources(List<RelevantDocument> relevantDocs) {
         List<AnswerResponse.Source> sources = new ArrayList<>();
@@ -387,7 +387,7 @@ public class ChatAIService {
     }
 
     /**
-     * חישוב רמת ביטחון
+     * Calculate confidence level
      */
     private Double calculateConfidence(List<RelevantDocument> results) {
         if (results.isEmpty()) {
@@ -403,7 +403,7 @@ public class ChatAIService {
     }
 
     /**
-     * קיצור טקסט
+     * Truncate text
      */
     private String truncateText(String text, int maxLength) {
         if (text == null || text.length() <= maxLength) {
@@ -413,7 +413,7 @@ public class ChatAIService {
     }
 
     /**
-     * תגובה כשאין תוצאות
+     * Response when no results found
      */
     private AnswerResponse createNoResultsResponse(Message userMessage) {
         String answer = "מצטער, לא מצאתי מידע רלוונטי במסמכים לשאלה שלך. " +
@@ -442,7 +442,7 @@ public class ChatAIService {
     }
 
     /**
-     * תגובת שגיאה
+     * Error response
      */
     private AnswerResponse createErrorResponse(String errorMessage) {
         return AnswerResponse.builder()
@@ -455,9 +455,9 @@ public class ChatAIService {
     // ==================== Get Messages ====================
 
     /**
-     * קבלת היסטוריית הודעות
+     * Get message history
      */
-    @Transactional(readOnly = true)  // ← הוסף את זה!
+    @Transactional(readOnly = true)
     public List<Message> getChatHistory(Long chatId, User user) {
         log.info("🔵 getChatHistory called for chatId: {}, user: {}", chatId, user.getEmail());
         
@@ -472,7 +472,7 @@ public class ChatAIService {
                 log.warn("⚠️ No messages found for chat {}", chatId);
             }
             
-            // Force lazy loading
+            // Force eager loading of lazy relationships
             messages.forEach(msg -> {
                 log.debug("Message {}: role={}, content length={}", 
                     msg.getId(), 
@@ -491,7 +491,7 @@ public class ChatAIService {
     // ==================== Inner Classes ====================
     
     /**
-     * מסמך רלוונטי (תוצאת חיפוש)
+     * Relevant document (search result)
      */
     @lombok.Data
     private static class RelevantDocument {

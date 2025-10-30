@@ -1,4 +1,4 @@
-package com.example.backend.shared.service;
+package com.example.backend.common.infrastructure.storage;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,27 +52,27 @@ public class S3Service {
             log.info("🔵 Initializing AWS S3 Service...");
             log.info("========================================");
 
-            // ✅ Validation - בדיקת תקינות משתני סביבה
+            // Validation - check environment variables
             validateConfiguration();
 
             log.info("✅ Configuration validated successfully");
             log.info("Region: {}", region);
             log.info("Bucket: {}", bucketName);
             log.info("Access Key: {}***", accessKey.substring(0, Math.min(4, accessKey.length())));
-            
+
             if (customEndpoint != null && !customEndpoint.isEmpty()) {
                 log.info("Custom Endpoint: {}", customEndpoint);
             }
 
-            // יצירת credentials
+            // Create credentials
             AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
 
-            // בניית S3Client
+            // Build S3Client
             var builder = S3Client.builder()
                 .region(Region.of(region))
                 .credentialsProvider(StaticCredentialsProvider.create(credentials));
 
-            // אם יש endpoint מותאם (LocalStack, DigitalOcean Spaces וכו')
+            // If custom endpoint exists (LocalStack, DigitalOcean Spaces, etc.)
             if (customEndpoint != null && !customEndpoint.isEmpty()) {
                 log.info("Using custom endpoint: {}", customEndpoint);
                 builder.endpointOverride(URI.create(customEndpoint));
@@ -80,7 +80,7 @@ public class S3Service {
 
             s3Client = builder.build();
 
-            // יצירת presigner לURL זמני
+            // Create presigner for temporary URLs
             var presignerBuilder = S3Presigner.builder()
                 .region(Region.of(region))
                 .credentialsProvider(StaticCredentialsProvider.create(credentials));
@@ -91,7 +91,7 @@ public class S3Service {
 
             presigner = presignerBuilder.build();
 
-            // יצירת bucket אם לא קיים
+            // Create bucket if it doesn't exist
             createBucketIfNotExists();
 
             log.info("========================================");
@@ -108,7 +108,7 @@ public class S3Service {
     }
 
     /**
-     * ✅ בדיקת תקינות הגדרות
+     * Validate configuration
      */
     private void validateConfiguration() {
         List<String> errors = new ArrayList<>();
@@ -139,7 +139,7 @@ public class S3Service {
             log.error("   AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
             log.error("   AWS_REGION=us-east-1");
             log.error("   AWS_S3_BUCKET=my-bucket-name");
-            
+
             throw new IllegalStateException("S3 configuration is invalid. Missing or incorrect AWS credentials.");
         }
     }
@@ -160,16 +160,16 @@ public class S3Service {
             s3Client.headBucket(HeadBucketRequest.builder()
                 .bucket(bucketName)
                 .build());
-            
+
             log.info("✅ Bucket already exists: {}", bucketName);
 
         } catch (NoSuchBucketException e) {
             log.info("📦 Creating bucket: {}", bucketName);
-            
+
             s3Client.createBucket(CreateBucketRequest.builder()
                 .bucket(bucketName)
                 .build());
-            
+
             log.info("✅ Bucket created successfully: {}", bucketName);
 
         } catch (Exception e) {
@@ -328,17 +328,17 @@ public class S3Service {
             log.info("🗑️ Deleting folder: {}", prefix);
 
             List<String> files = listFiles(prefix);
-            
+
             if (files.isEmpty()) {
                 log.info("📂 No files to delete in folder: {}", prefix);
                 return;
             }
 
             List<ObjectIdentifier> toDelete = new ArrayList<>();
-            
+
             for (String key : files) {
                 toDelete.add(ObjectIdentifier.builder().key(key).build());
-                
+
                 if (toDelete.size() == 1000) {
                     deleteObjects(toDelete);
                     toDelete.clear();
@@ -368,7 +368,7 @@ public class S3Service {
 
     public String getPresignedUrl(String objectKey, int expirySeconds) {
         try {
-            log.info("🔗 Generating presigned URL for: {} (expiry: {}s)", 
+            log.info("🔗 Generating presigned URL for: {} (expiry: {}s)",
                 objectKey, expirySeconds);
 
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()

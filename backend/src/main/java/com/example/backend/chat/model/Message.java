@@ -12,12 +12,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Entity של הודעה (Message)
- * 
- * מייצג הודעה בשיחה - יכול להיות:
- * - שאלה של המשתמש (USER)
- * - תשובה של ה-AI (ASSISTANT)
- * - הודעת מערכת (SYSTEM)
+ * Message Entity
+ *
+ * Represents a message in a chat conversation - can be:
+ * - User question (USER)
+ * - AI response (ASSISTANT)
+ * - System message (SYSTEM)
  */
 @Entity
 @Table(name = "messages")
@@ -31,7 +31,7 @@ public class Message {
     private Long id;
 
     /**
-     * השיחה שההודעה שייכת אליה
+     * The chat this message belongs to
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "chat_id", nullable = false)
@@ -39,25 +39,25 @@ public class Message {
     private Chat chat;
 
     /**
-     * תוכן ההודעה
-     * אם USER: "מה הריבית בחוזה?"
-     * אם ASSISTANT: "הריבית היא 3.5%"
+     * Message content
+     * Example USER: "What is the interest rate in the contract?"
+     * Example ASSISTANT: "The interest rate is 3.5%"
      */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     /**
-     * תפקיד השולח
-     * USER = המשתמש שאל
-     * ASSISTANT = ה-AI ענה
-     * SYSTEM = הודעת מערכת
+     * Sender role
+     * USER = user asked
+     * ASSISTANT = AI answered
+     * SYSTEM = system message
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private MessageRole role;
 
     /**
-     * המשתמש ששלח (רק אם role=USER)
+     * The user who sent the message (only if role=USER)
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
@@ -65,35 +65,35 @@ public class Message {
     private User user;
 
     /**
-     * מקורות המידע שממנו הגיעה התשובה
-     * לדוגמה: ["חוזה.pdf - עמוד 3", "נספח.pdf - עמוד 1"]
-     * נשמר כJSON string
+     * Sources of information for the answer
+     * Example: ["contract.pdf - page 3", "appendix.pdf - page 1"]
+     * Stored as JSON string
      */
     @Column(columnDefinition = "TEXT")
     private String sources;
 
     /**
-     * רמת ביטחון בתשובה (0.0 - 1.0)
-     * אם 0.95 = ה-AI בטוח ב-95% שהתשובה נכונה
+     * Confidence score in the answer (0.0 - 1.0)
+     * Example: 0.95 = AI is 95% confident the answer is correct
      */
     @Column(name = "confidence_score")
     private Double confidenceScore;
 
     /**
-     * כמה טוקנים התשובה השתמשה (לעלויות OpenAI)
+     * Number of tokens used (for OpenAI costs)
      */
     @Column(name = "tokens_used")
     private Integer tokensUsed;
 
     /**
-     * זמן תגובה במילישניות
+     * Response time in milliseconds
      */
     @Column(name = "response_time_ms")
     private Long responseTimeMs;
 
     /**
-     * מזהה הודעה קודמת (לשרשור שיחה)
-     * כך ה-AI יכול לזכור הקשר
+     * Parent message ID (for conversation threading)
+     * Allows the AI to remember context
      */
     @Column(name = "parent_message_id")
     private Long parentMessageId;
@@ -107,48 +107,48 @@ public class Message {
     }
 
     /**
-     * האם זו הודעת משתמש?
+     * Check if this is a user message
      */
     public boolean isUserMessage() {
         return this.role == MessageRole.USER;
     }
 
     /**
-     * האם זו הודעת AI?
+     * Check if this is an AI message
      */
     public boolean isAssistantMessage() {
         return this.role == MessageRole.ASSISTANT;
     }
 
     /**
-     * המרת sources מJSON string לרשימה
+     * Convert sources from JSON string to list
+     * Uses simple comma-separated format for now
      */
     public List<String> getSourcesList() {
         if (sources == null || sources.isEmpty()) {
             return new ArrayList<>();
         }
-        // TODO: להטמיע המרה מJSON
         return List.of(sources.split(","));
     }
 
     /**
-     * המרת רשימה ל-JSON string
+     * Convert list to JSON string
+     * Uses simple comma-separated format for now
      */
     public void setSourcesList(List<String> sourcesList) {
         if (sourcesList == null || sourcesList.isEmpty()) {
             this.sources = null;
         } else {
-            // TODO: להטמיע המרה לJSON
             this.sources = String.join(",", sourcesList);
         }
     }
 
     /**
-     * תפקידים אפשריים
+     * Possible message roles
      */
     public enum MessageRole {
-        USER,       // שאלה של משתמש
-        ASSISTANT,  // תשובה של AI
-        SYSTEM      // הודעת מערכת
+        USER,       // User question
+        ASSISTANT,  // AI answer
+        SYSTEM      // System message
     }
 }

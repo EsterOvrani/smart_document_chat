@@ -1,5 +1,6 @@
-package com.example.backend.auth.config;
+package com.example.backend.config;
 
+import com.example.backend.common.filter.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -38,7 +39,7 @@ public class SecurityConfiguration {
                         // ✅ נתיבים ציבוריים (ללא אימות)
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/error").permitAll()
-                        
+
                         // ✅ כל השאר דורש אימות (כולל /api/**)
                         .anyRequest().authenticated()
                 )
@@ -54,7 +55,7 @@ public class SecurityConfiguration {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
+
         configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));

@@ -10,13 +10,13 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * Entity של מסמך (Document)
- * 
- * מייצג קובץ PDF שהמשתמש העלה.
- * כל מסמך:
- * - שייך לשיחה ספציפית
- * - נשמר ב-MinIO (אחסון קבצים)
- * - מעובד לוקטורים ב-Qdrant
+ * Document Entity
+ *
+ * Represents a PDF file uploaded by the user.
+ * Each document:
+ * - Belongs to a specific chat
+ * - Stored in S3 (file storage)
+ * - Processed into vectors in Qdrant
  */
 @Entity
 @Table(name = "documents")
@@ -30,84 +30,84 @@ public class Document {
     private Long id;
 
     /**
-     * השיחה שהמסמך שייך אליה
+     * The chat this document belongs to
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "chat_id", nullable = false)
     private Chat chat;
 
     /**
-     * המשתמש שהעלה את המסמך
+     * The user who uploaded the document
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     /**
-     * שם הקובץ המקורי (כמו שהמשתמש העלה)
-     * לדוגמה: "חוזה_משכנתא.pdf"
+     * Original file name (as uploaded by user)
+     * Example: "mortgage_contract.pdf"
      */
     @Column(name = "original_file_name", nullable = false)
     private String originalFileName;
 
     /**
-     * נתיב הקובץ ב-MinIO
-     * לדוגמה: "users/5/chats/1/doc_12345.pdf"
+     * File path in S3
+     * Example: "users/5/chats/1/doc_12345.pdf"
      */
     @Column(name = "file_path", nullable = false)
     private String filePath;
 
     /**
-     * סוג הקובץ
+     * File type
      */
     @Column(name = "file_type")
     private String fileType = "pdf";
 
     /**
-     * גודל הקובץ בבתים
+     * File size in bytes
      */
     @Column(name = "file_size")
     private Long fileSize;
 
     /**
-     * Hash של התוכן (למניעת כפילויות)
+     * Content hash (to prevent duplicates)
      */
     @Column(name = "content_hash")
     private String contentHash;
 
     /**
-     * סטטוס העיבוד
+     * Processing status
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProcessingStatus processingStatus = ProcessingStatus.PENDING;
 
     /**
-     * אחוז התקדמות (0-100)
+     * Progress percentage (0-100)
      */
     @Column(name = "processing_progress")
     private Integer processingProgress = 0;
 
     /**
-     * כמה תווים במסמך (אחרי עיבוד)
+     * How many characters in document (after processing)
      */
     @Column(name = "character_count")
     private Integer characterCount;
 
     /**
-     * כמה chunks נוצרו (חלוקה לחתיכות קטנות)
+     * How many chunks were created (split into small pieces)
      */
     @Column(name = "chunk_count")
     private Integer chunkCount;
 
     /**
-     * האם המסמך פעיל
+     * Is the document active
      */
     @Column(nullable = false)
     private Boolean active = true;
 
     /**
-     * הודעת שגיאה אם נכשל
+     * Error message if processing failed
      */
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
@@ -133,7 +133,7 @@ public class Document {
     }
 
     /**
-     * עדכון לסטטוס מעבד
+     * Update status to processing
      */
     public void startProcessing() {
         this.processingStatus = ProcessingStatus.PROCESSING;
@@ -141,7 +141,7 @@ public class Document {
     }
 
     /**
-     * עדכון סטטוס להצלחה
+     * Mark as successfully completed
      */
     public void markAsCompleted(int characterCount, int chunkCount) {
         this.processingStatus = ProcessingStatus.COMPLETED;
@@ -152,7 +152,7 @@ public class Document {
     }
 
     /**
-     * עדכון לכישלון
+     * Mark as failed
      */
     public void markAsFailed(String errorMessage) {
         this.processingStatus = ProcessingStatus.FAILED;
@@ -161,33 +161,33 @@ public class Document {
     }
 
     /**
-     * האם המסמך מעובד?
+     * Is the document processed?
      */
     public boolean isProcessed() {
         return this.processingStatus == ProcessingStatus.COMPLETED;
     }
 
     /**
-     * האם בתהליך עיבוד?
+     * Is it currently processing?
      */
     public boolean isProcessing() {
         return this.processingStatus == ProcessingStatus.PROCESSING;
     }
 
     /**
-     * האם נכשל?
+     * Did it fail?
      */
     public boolean hasFailed() {
         return this.processingStatus == ProcessingStatus.FAILED;
     }
 
     /**
-     * סטטוסים אפשריים
+     * Possible processing statuses
      */
     public enum ProcessingStatus {
-        PENDING,      // ממתין לעיבוד
-        PROCESSING,   // בעיבוד
-        COMPLETED,    // הושלם
-        FAILED        // נכשל
+        PENDING,      // Waiting for processing
+        PROCESSING,   // Currently processing
+        COMPLETED,    // Completed successfully
+        FAILED        // Failed
     }
 }

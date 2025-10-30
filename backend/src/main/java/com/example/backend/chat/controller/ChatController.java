@@ -21,22 +21,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Controller לניהול שיחות
- * 
+ * Controller for managing chats
+ *
  * Endpoints:
- * - POST   /api/chats              - יצירת שיחה
- * - GET    /api/chats              - רשימת שיחות
- * - GET    /api/chats/{id}         - פרטי שיחה
- * - PUT    /api/chats/{id}         - עדכון שיחה
- * - DELETE /api/chats/{id}         - מחיקת שיחה
- * - POST   /api/chats/{id}/ask     - שאילת שאלה
- * - GET    /api/chats/{id}/messages - היסטוריית הודעות
+ * - POST   /api/chats              - Create chat
+ * - GET    /api/chats              - List chats
+ * - GET    /api/chats/{id}         - Get chat details
+ * - PUT    /api/chats/{id}         - Update chat
+ * - DELETE /api/chats/{id}         - Delete chat
+ * - POST   /api/chats/{id}/ask     - Ask question
+ * - GET    /api/chats/{id}/messages - Get message history
  */
 @RestController
 @RequestMapping("/api/chats")
 @RequiredArgsConstructor
 @Slf4j
-@CrossOrigin(origins = "*")  // בפרודקשן - החלף ל-origins ספציפיים!
+@CrossOrigin(origins = "*")  // In production - replace with specific origins!
 public class ChatController {
 
     // ==================== Dependencies ====================
@@ -47,15 +47,15 @@ public class ChatController {
     // ==================== Create Chat ====================
 
     /**
-     * יצירת שיחה חדשה
-     * 
+     * Create new chat
+     *
      * POST /api/chats
      * Content-Type: multipart/form-data
-     * 
+     *
      * Body:
-     * - title: String (כותרת השיחה)
-     * - files: List<MultipartFile> (קבצי PDF)
-     * 
+     * - title: String (chat title)
+     * - files: List<MultipartFile> (PDF files)
+     *
      * Response: ChatResponse
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -118,10 +118,10 @@ public class ChatController {
     // ==================== Get Chats ====================
 
     /**
-     * קבלת כל השיחות של המשתמש
-     * 
+     * Get all chats for the user
+     *
      * GET /api/chats
-     * 
+     *
      * Response: ChatListResponse
      */
     @GetMapping
@@ -147,10 +147,10 @@ public class ChatController {
     }
 
     /**
-     * חיפוש שיחות
-     * 
-     * GET /api/chats/search?q=חוזה
-     * 
+     * Search chats
+     *
+     * GET /api/chats/search?q=contract
+     *
      * Response: ChatListResponse
      */
     @GetMapping("/search")
@@ -178,10 +178,10 @@ public class ChatController {
     }
 
     /**
-     * קבלת שיחה ספציפית
-     * 
+     * Get specific chat
+     *
      * GET /api/chats/{id}
-     * 
+     *
      * Response: ChatResponse
      */
     @GetMapping("/{id}")
@@ -213,11 +213,11 @@ public class ChatController {
     // ==================== Update Chat ====================
 
     /**
-     * עדכון כותרת שיחה
-     * 
+     * Update chat title
+     *
      * PUT /api/chats/{id}
-     * Body: { "title": "כותרת חדשה" }
-     * 
+     * Body: { "title": "new title" }
+     *
      * Response: ChatResponse
      */
     @PutMapping("/{id}")
@@ -260,10 +260,10 @@ public class ChatController {
     // ==================== Delete Chat ====================
 
     /**
-     * מחיקת שיחה
-     * 
+     * Delete chat
+     *
      * DELETE /api/chats/{id}
-     * 
+     *
      * Response: success message
      */
     @DeleteMapping("/{id}")
@@ -293,11 +293,11 @@ public class ChatController {
     // ==================== Ask Question ====================
 
     /**
-     * שאילת שאלה
-     * 
+     * Ask a question
+     *
      * POST /api/chats/{id}/ask
      * Body: AskQuestionRequest
-     * 
+     *
      * Response: AnswerResponse
      */
     @PostMapping("/{id}/ask")
@@ -334,10 +334,10 @@ public class ChatController {
     // ==================== Get Messages ====================
 
     /**
-     * קבלת היסטוריית הודעות
-     * 
+     * Get message history
+     *
      * GET /api/chats/{id}/messages
-     * 
+     *
      * Response: List<Message>
      */
     @GetMapping("/{id}/messages")
@@ -375,10 +375,10 @@ public class ChatController {
     // ==================== Statistics ====================
 
     /**
-     * סטטיסטיקות על שיחות המשתמש
-     * 
+     * Get user chat statistics
+     *
      * GET /api/chats/statistics
-     * 
+     *
      * Response: GeneralStatistics
      */
     @GetMapping("/statistics")
@@ -407,17 +407,17 @@ public class ChatController {
     // ==================== Helper Methods ====================
 
     /**
-     * קבלת המשתמש המחובר
+     * Get currently authenticated user
      */
     private User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        
+
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new SecurityException("משתמש לא מחובר");
         }
 
         Object principal = authentication.getPrincipal();
-        
+
         if (!(principal instanceof User)) {
             throw new SecurityException("משתמש לא תקין");
         }
@@ -426,7 +426,7 @@ public class ChatController {
     }
 
     /**
-     * בניית תגובת שגיאה
+     * Build error response
      */
     private ResponseEntity<Map<String, Object>> buildErrorResponse(
             HttpStatus status, String message) {
@@ -440,10 +440,10 @@ public class ChatController {
 
     // ==================== Processing Status ====================
     /**
-     * קבלת סטטוס עיבוד מפורט
-     * 
+     * Get detailed processing status
+     *
      * GET /api/chats/{id}/processing-status
-     * 
+     *
      * Response: ProcessingStatusResponse
      */
     @GetMapping("/{id}/processing-status")
