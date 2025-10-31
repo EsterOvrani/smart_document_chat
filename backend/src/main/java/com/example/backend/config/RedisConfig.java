@@ -74,12 +74,15 @@ public class RedisConfig {
     }
 
     /**
-     * Custom ObjectMapper for Redis serialization
+     * Custom ObjectMapper for Redis serialization ONLY
      * Supports:
      * - Java 8 Date/Time API (LocalDateTime, LocalDate, etc.)
      * - Polymorphic type information (to deserialize correctly)
+     * 
+     * NOTE: This ObjectMapper is ONLY for Redis internal use.
+     * It should NOT affect REST API JSON serialization.
      */
-    @Bean
+    @Bean(name = "redisObjectMapper")
     public ObjectMapper redisObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
         
