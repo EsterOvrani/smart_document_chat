@@ -16,6 +16,7 @@ import com.example.backend.common.infrastructure.storage.S3Service;
 import com.example.backend.common.exception.ResourceNotFoundException;
 import com.example.backend.common.exception.ValidationException;
 import com.example.backend.common.exception.UnauthorizedException;
+import com.example.backend.common.exception.ExternalServiceException;
 import com.example.backend.common.exception.FileProcessingException;
 
 import lombok.RequiredArgsConstructor;
@@ -332,7 +333,8 @@ public class ChatService {
             log.error("========================================");
             log.error("❌ CRITICAL ERROR during deletion", e);
             log.error("========================================");
-            throw new ResourceNotFoundException("נכשל במחיקת השיחה: " + e.getMessage());
+            throw ExternalServiceException.storageServiceError("נכשל במחיקת השיחה: " + e.getMessage());
+
         }
     }
         

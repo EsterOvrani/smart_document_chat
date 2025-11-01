@@ -3,6 +3,10 @@ package com.example.backend.common.infrastructure.storage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import com.example.backend.common.exception.ExternalServiceException;
+import com.example.backend.common.exception.FileProcessingException;
+
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -103,7 +107,7 @@ public class S3Service {
             log.error("❌ FAILED to initialize AWS S3 Service");
             log.error("========================================");
             log.error("Error details:", e);
-            throw new RuntimeException("Failed to initialize S3 client: " + e.getMessage(), e);
+            throw ExternalServiceException.storageServiceError("נכשל באתחול S3 client: " + e.getMessage());
         }
     }
 
@@ -174,7 +178,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to check/create bucket: {}", bucketName, e);
-            throw new RuntimeException("Failed to create S3 bucket", e);
+            throw ExternalServiceException.storageServiceError("נכשל ביצירת S3 bucket: " + e.getMessage());
         }
     }
 
@@ -201,7 +205,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to upload file: {}", objectKey, e);
-            throw new RuntimeException("Failed to upload file to S3", e);
+            throw FileProcessingException.uploadFailed(objectKey);
         }
     }
 
@@ -221,7 +225,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to download file: {}", objectKey, e);
-            throw new RuntimeException("Failed to download file from S3", e);
+            throw ExternalServiceException.storageServiceError("נכשל בהורדת קובץ מ-S3: " + objectKey);
         }
     }
 
@@ -240,7 +244,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to delete file: {}", objectKey, e);
-            throw new RuntimeException("Failed to delete file from S3", e);
+            throw ExternalServiceException.storageServiceError("Failed to delete file from S3" + e);
         }
     }
 
@@ -259,7 +263,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to check if file exists: {}", objectKey, e);
-            throw new RuntimeException("Failed to check file existence", e);
+            throw ExternalServiceException.storageServiceError("S3: Failed to check file existence" + e);
         }
     }
 
@@ -283,7 +287,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to get file info: {}", objectKey, e);
-            throw new RuntimeException("Failed to get file info from S3", e);
+            throw ExternalServiceException.storageServiceError("Failed to get file info from S3" + e);
         }
     }
 
@@ -319,7 +323,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to list files with prefix: {}", prefix, e);
-            throw new RuntimeException("Failed to list files from S3", e);
+            throw ExternalServiceException.storageServiceError("Failed to list files from S3" + e);
         }
     }
 
@@ -353,7 +357,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to delete folder: {}", prefix, e);
-            throw new RuntimeException("Failed to delete folder from S3", e);
+            throw ExternalServiceException.storageServiceError("Failed to delete folder from S3" + e);
         }
     }
 
@@ -410,7 +414,7 @@ public class S3Service {
 
         } catch (Exception e) {
             log.error("❌ Failed to copy file", e);
-            throw new RuntimeException("Failed to copy file in S3", e);
+            throw ExternalServiceException.storageServiceError("Failed to copy file in S3" + e);
         }
     }
 

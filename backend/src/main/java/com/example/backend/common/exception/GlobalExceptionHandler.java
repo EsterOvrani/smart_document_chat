@@ -256,4 +256,25 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(errorResponse);
     }
+    
+    @ExceptionHandler(NullPointerException.class)
+        public ResponseEntity<ErrorResponse> handleNullPointerException(
+                NullPointerException ex,
+                HttpServletRequest request) {
+        
+        log.error("❌ NullPointerException occurred", ex);
+        
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .errorCode("NULL_POINTER")
+                .message("שגיאת מערכת - ערך חסר")
+                .details("אירעה שגיאה פנימית במערכת")
+                .timestamp(LocalDateTime.now())
+                .path(request.getRequestURI())
+                .build();
+        
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorResponse);
+        }
 }

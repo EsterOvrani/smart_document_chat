@@ -1,5 +1,6 @@
 package com.example.backend.common.infrastructure.vectordb;
 
+import com.example.backend.common.exception.ExternalServiceException;
 import com.example.backend.config.QdrantProperties;
 
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -62,7 +63,7 @@ public class QdrantVectorService {
             log.info("Qdrant Vector service initialized successfully");
         } catch (Exception e) {
             log.error("Failed to initialize Qdrant Vector service: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to initialize Qdrant Vector service", e);
+            throw ExternalServiceException.vectorDbError("נכשל באתחול Qdrant: " + e.getMessage());
         }
     }
 
@@ -71,6 +72,7 @@ public class QdrantVectorService {
      * @param chatTitle שם השיחה
      */
     public String createNewCollectionForUpload(String chatTitle) {
+        String collectionName = "it still didnt created";
         try {
             // ✅ ניקוי שם השיחה - הסרת תווים לא חוקיים
             String cleanTitle = chatTitle
@@ -87,16 +89,11 @@ public class QdrantVectorService {
             String timestamp = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 
-            String collectionName = cleanTitle + "_" + timestamp;
-
-            log.info("Creating new collection: {}", collectionName);
-
-            // יצור את הקולקשין דרך REST API
-            createCollectionIfNotExists(collectionName);
+            collectionName = cleanTitle + "_" + timestamp;
 
             // ✅ המתן עד שהקולקשן מוכן (מקסימום 30 שניות)
             if (!waitForCollectionReady(collectionName, 30)) {
-                throw new RuntimeException("Collection creation timeout: " + collectionName);
+                throw ExternalServiceException.vectorDbError("פג זמן ההמתנה ליצירת קולקשן: " + collectionName);
             }
 
             // יצירת EmbeddingStore
@@ -115,7 +112,7 @@ public class QdrantVectorService {
 
         } catch (Exception e) {
             log.error("❌ Failed to create collection: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to create collection: " + e.getMessage(), e);
+            throw ExternalServiceException.vectorDbError("נכשל ביצירת קולקשן: " + e.getMessage());
         }
     }
 
@@ -326,7 +323,7 @@ public class QdrantVectorService {
 
         } catch (Exception e) {
             log.error("❌ Failed to delete collection: {}", collectionName, e);
-            throw new RuntimeException("Failed to delete collection: " + collectionName, e);
+            throw ExternalServiceException.vectorDbError("נכשל במחיקת קולקשן: " + collectionName);
         }
     }
 }

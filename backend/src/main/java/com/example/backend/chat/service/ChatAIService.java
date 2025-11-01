@@ -163,6 +163,8 @@ public class ChatAIService {
             
             return answerResponse;
 
+        } catch (ValidationException | UnauthorizedException | ResourceNotFoundException e) {
+            throw e;  
         } catch (Exception e) {
             log.error("❌ Failed to answer question for chat: {}", chatId, e);
             return createErrorResponse(e.getMessage());

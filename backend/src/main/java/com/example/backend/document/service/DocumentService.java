@@ -73,7 +73,7 @@ public class DocumentService {
         log.info("🔵 File size: {}", file.getSize());
         log.info("🔵 Chat ID: {}", chat.getId());
         log.info("🔵 ========================================");
-
+        
         try {
             // Step 1: Read file content to memory before async processing
             byte[] fileBytes = file.getBytes();
@@ -88,7 +88,7 @@ public class DocumentService {
             
         } catch (IOException e) {
             log.error("❌ Failed to read file to memory: {}", file.getOriginalFilename(), e);
-            throw new RuntimeException("Failed to read file", e);
+            throw FileProcessingException.uploadFailed(file.getOriginalFilename());
         }
     }
 
@@ -170,7 +170,8 @@ public class DocumentService {
 
             if (embeddingStore == null) {
                 log.error("❌ No embedding store found for collection: {}", collectionName);
-                throw new RuntimeException("No embedding store for collection: " + collectionName);
+                throw ExternalServiceException.vectorDbError("לא נמצא אחסון וקטורי עבור הקולקשן: " + collectionName);
+
             }
 
             // Create embeddings and store
