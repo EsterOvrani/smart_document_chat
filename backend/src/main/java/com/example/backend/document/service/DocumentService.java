@@ -12,6 +12,11 @@ import com.example.backend.common.infrastructure.vectordb.QdrantVectorService;
 import com.example.backend.user.model.User;
 import com.example.backend.common.infrastructure.document.DocumentChunkingService;
 import com.example.backend.document.model.Document;
+import com.example.backend.common.exception.ResourceNotFoundException;
+import com.example.backend.common.exception.ValidationException;
+import com.example.backend.common.exception.UnauthorizedException;
+import com.example.backend.common.exception.FileProcessingException;
+import com.example.backend.common.exception.ExternalServiceException;
 
 // LangChain4j imports
 import dev.langchain4j.data.document.DocumentParser;
@@ -195,6 +200,17 @@ public class DocumentService {
             
             log.info("✅ Document {} processed successfully", document.getId());
 
+        } catch (FileProcessingException e) {
+            // שגיאת עיבוד קובץ ספציפית
+            log.error("🔴 File processing error: {}", e.getMessage());
+            if (document != null) {
+                document.markAsFailed(e.getMessage());
+                documentRepository.save(document);
+            }
+            markChatAsFailed(chat.getId(), "נכשל בעיבוד מסמך: " + originalFilename);
+            cleanupFile(filePath);
+            throw e;
+            
         } catch (Exception e) {
             log.error("🔴 EXCEPTION in processDocumentAsync()!", e);
             log.error("🔴 Exception type: {}", e.getClass().getName());
@@ -209,15 +225,9 @@ public class DocumentService {
             }
             
             markChatAsFailed(chat.getId(), "נכשל בעיבוד מסמך: " + originalFilename);
+            cleanupFile(filePath);
             
-            if (filePath != null) {
-                try {
-                    s3Service.deleteFile(filePath);
-                    log.info("Cleaned up file from MinIO: {}", filePath);
-                } catch (Exception cleanupError) {
-                    log.warn("Failed to cleanup file from MinIO: {}", filePath, cleanupError);
-                }
-            }
+            throw FileProcessingException.uploadFailed(originalFilename);
         }
     }
 
@@ -265,15 +275,15 @@ public class DocumentService {
      */
     private void validateFile(String filename, byte[] fileBytes) {
         if (fileBytes == null || fileBytes.length == 0) {
-            throw new IllegalArgumentException("הקובץ ריק");
+            throw new ValidationException("file", "הקובץ ריק");
         }
 
         if (filename == null || !filename.toLowerCase().endsWith(".pdf")) {
-            throw new IllegalArgumentException("הקובץ חייב להיות PDF");
+            throw FileProcessingException.invalidFileType(filename, "PDF");
         }
 
         if (fileBytes.length > 50 * 1024 * 1024) {
-            throw new IllegalArgumentException("הקובץ גדול מ-50MB");
+            throw FileProcessingException.fileTooLarge(filename, 50L * 1024 * 1024);
         }
         
         log.info("✅ File validation passed: {} bytes", fileBytes.length);
@@ -304,8 +314,7 @@ public class DocumentService {
         log.info("Updating status for chat: {}", chatId);
 
         Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
-
+            .orElseThrow(() -> new ResourceNotFoundException("שיחה", chatId));
         chat.decrementPendingDocuments();
 
         if (chat.getPendingDocuments() == 0) {
@@ -320,12 +329,23 @@ public class DocumentService {
         log.error("Marking chat: {} as FAILED. Error: {}", chatId, errorMessage);
 
         Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+            .orElseThrow(() -> new ResourceNotFoundException("שיחה", chatId));
 
         chat.setStatus(Chat.ChatStatus.FAILED);
         chat.setErrorMessage(errorMessage);
         
         chatRepository.save(chat);
+    }
+
+    private void cleanupFile(String filePath) {
+        if (filePath != null) {
+            try {
+                s3Service.deleteFile(filePath);
+                log.info("Cleaned up file from MinIO: {}", filePath);
+            } catch (Exception cleanupError) {
+                log.warn("Failed to cleanup file from MinIO: {}", filePath, cleanupError);
+            }
+        }
     }
 
     // ==================== Get Documents Methods ====================
@@ -345,8 +365,12 @@ public class DocumentService {
     public DocumentResponse getDocument(Long documentId, User user) {
         log.info("Getting document: {}", documentId);
 
-        Document document = documentRepository.findByIdAndUserAndActiveTrue(documentId, user)
-            .orElseThrow(() -> new RuntimeException("מסמך לא נמצא או אין הרשאה"));
+        Document document = documentRepository.findByIdAndActiveTrue(documentId)
+            .orElseThrow(() -> new ResourceNotFoundException("מסמך", documentId));
+        
+        if (!document.getUser().getId().equals(user.getId())) {
+            throw new UnauthorizedException("מסמך", documentId);
+        }
 
         return documentMapper.toResponse(document);
     }
@@ -366,8 +390,12 @@ public class DocumentService {
     public void deleteDocument(Long documentId, User user) {
         log.info("Deleting document: {}", documentId);
 
-        Document document = documentRepository.findByIdAndUserAndActiveTrue(documentId, user)
-            .orElseThrow(() -> new RuntimeException("מסמך לא נמצא או אין הרשאה"));
+        Document document = documentRepository.findByIdAndActiveTrue(documentId)
+            .orElseThrow(() -> new ResourceNotFoundException("מסמך", documentId));
+        
+        if (!document.getUser().getId().equals(user.getId())) {
+            throw new UnauthorizedException("מסמך", documentId);
+        }
 
         document.setActive(false);
         documentRepository.save(document);
@@ -378,6 +406,7 @@ public class DocumentService {
             log.info("Deleted file from MinIO: {}", document.getFilePath());
         } catch (Exception e) {
             log.warn("Failed to delete file from MinIO", e);
+            throw ExternalServiceException.storageServiceError("נכשל במחיקת הקובץ מהאחסון");
         }
     }
 
@@ -437,9 +466,9 @@ public class DocumentService {
             // Permission check - ensure all documents belong to user
             boolean unauthorized = documents.stream()
                 .anyMatch(doc -> !doc.getUser().getId().equals(user.getId()));
-            
+                            
             if (unauthorized) {
-                throw new SecurityException("אין הרשאה למחוק מסמכים של משתמש אחר");
+                throw new UnauthorizedException("אין הרשאה למחוק מסמכים של משתמש אחר");
             }
 
             int count = documents.size();
@@ -450,12 +479,12 @@ public class DocumentService {
             log.info("✅ Deleted {} document entities for chat: {}", count, chatId);
             return count;
 
-        } catch (SecurityException e) {
-            log.error("❌ Security violation: {}", e.getMessage());
+        } catch (UnauthorizedException e) {
+            log.error("❌ Authorization violation: {}", e.getMessage());
             throw e;
         } catch (Exception e) {
             log.error("❌ Failed to delete documents for chat: {}", chatId, e);
-            throw new RuntimeException("Failed to delete chat documents", e);
+            throw new ResourceNotFoundException("נכשל במחיקת המסמכים");
         }
     }
 

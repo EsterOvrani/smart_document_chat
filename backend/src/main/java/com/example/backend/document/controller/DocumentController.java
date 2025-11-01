@@ -4,6 +4,9 @@ import com.example.backend.document.dto.DocumentResponse;
 import com.example.backend.document.service.DocumentService;
 import com.example.backend.common.infrastructure.storage.S3Service;
 import com.example.backend.user.model.User;
+import com.example.backend.common.exception.ValidationException;
+import com.example.backend.common.exception.UnauthorizedException;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
@@ -55,26 +58,17 @@ public class DocumentController {
     public ResponseEntity<Map<String, Object>> getDocumentsByChat(
             @PathVariable Long chatId) {
 
-        try {
-            User currentUser = getCurrentUser();
-            
-            List<DocumentResponse> documents = 
-                documentService.getDocumentsByChat(chatId, currentUser);
+        User currentUser = getCurrentUser();
+        
+        List<DocumentResponse> documents = 
+            documentService.getDocumentsByChat(chatId, currentUser);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", documents);
-            response.put("count", documents.size());
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("data", documents);
+        response.put("count", documents.size());
 
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            log.error("Failed to get documents for chat: {}", chatId, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל בקבלת מסמכים"
-            );
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -88,26 +82,17 @@ public class DocumentController {
     public ResponseEntity<Map<String, Object>> getProcessedDocuments(
             @PathVariable Long chatId) {
 
-        try {
-            User currentUser = getCurrentUser();
-            
-            List<DocumentResponse> documents = 
-                documentService.getProcessedDocuments(chatId, currentUser);
+        User currentUser = getCurrentUser();
+        
+        List<DocumentResponse> documents = 
+            documentService.getProcessedDocuments(chatId, currentUser);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", documents);
-            response.put("count", documents.size());
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("data", documents);
+        response.put("count", documents.size());
 
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            log.error("Failed to get processed documents for chat: {}", chatId, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל בקבלת מסמכים מעובדים"
-            );
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
@@ -119,28 +104,15 @@ public class DocumentController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getDocument(@PathVariable Long id) {
-        try {
-            User currentUser = getCurrentUser();
-            
-            DocumentResponse document = documentService.getDocument(id, currentUser);
+        User currentUser = getCurrentUser();
+        
+        DocumentResponse document = documentService.getDocument(id, currentUser);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", document);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("data", document);
 
-            return ResponseEntity.ok(response);
-
-        } catch (RuntimeException e) {
-            log.warn("Document not found or unauthorized: {}", id);
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "מסמך לא נמצא");
-
-        } catch (Exception e) {
-            log.error("Failed to get document: {}", id, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל בקבלת המסמך"
-            );
-        }
+        return ResponseEntity.ok(response);
     }
 
     // ==================== Download Document ====================
@@ -154,38 +126,25 @@ public class DocumentController {
      */
     @GetMapping("/{id}/download")
     public ResponseEntity<?> downloadDocument(@PathVariable Long id) {
-        try {
-            User currentUser = getCurrentUser();
+        User currentUser = getCurrentUser();
 
-            // Get document details
-            DocumentResponse document = documentService.getDocument(id, currentUser);
+        // Get document details
+        DocumentResponse document = documentService.getDocument(id, currentUser);
 
-            // Download from S3
-            InputStream fileStream = s3Service.downloadFile(document.getFilePath());
+        // Download from S3
+        InputStream fileStream = s3Service.downloadFile(document.getFilePath());
 
-            // Prepare headers
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_PDF);
-            headers.setContentDispositionFormData(
-                "attachment",
-                document.getOriginalFileName()
-            );
+        // Prepare headers
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData(
+            "attachment",
+            document.getOriginalFileName()
+        );
 
-            return ResponseEntity.ok()
-                .headers(headers)
-                .body(new InputStreamResource(fileStream));
-
-        } catch (RuntimeException e) {
-            log.warn("Document not found or unauthorized: {}", id);
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "מסמך לא נמצא");
-
-        } catch (Exception e) {
-            log.error("Failed to download document: {}", id, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל בהורדת המסמך"
-            );
-        }
+        return ResponseEntity.ok()
+            .headers(headers)
+            .body(new InputStreamResource(fileStream));
     }
 
     /**
@@ -197,35 +156,23 @@ public class DocumentController {
      */
     @GetMapping("/{id}/download-url")
     public ResponseEntity<Map<String, Object>> getDownloadUrl(@PathVariable Long id) {
-        try {
-            User currentUser = getCurrentUser();
+        User currentUser = getCurrentUser();
 
-            // Get document details
-            DocumentResponse document = documentService.getDocument(id, currentUser);
+        // Get document details
+        DocumentResponse document = documentService.getDocument(id, currentUser);
 
-            // Create temporary URL (valid for 1 hour)
-            String presignedUrl = s3Service.getPresignedUrl(
-                document.getFilePath(),
-                3600  // 1 hour
-            );
+        // Create temporary URL (valid for 1 hour)
+        String presignedUrl = s3Service.getPresignedUrl(
+            document.getFilePath(),
+            3600  // 1 hour
+        );
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("url", presignedUrl);
-            response.put("expiresIn", 3600);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("url", presignedUrl);
+        response.put("expiresIn", 3600);
 
-            return ResponseEntity.ok(response);
-
-        } catch (RuntimeException e) {
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "מסמך לא נמצא");
-
-        } catch (Exception e) {
-            log.error("Failed to generate download URL: {}", id, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל ביצירת קישור הורדה"
-            );
-        }
+        return ResponseEntity.ok(response);
     }
 
     // ==================== Delete Document ====================
@@ -239,26 +186,14 @@ public class DocumentController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> deleteDocument(@PathVariable Long id) {
-        try {
-            User currentUser = getCurrentUser();
-            documentService.deleteDocument(id, currentUser);
+        User currentUser = getCurrentUser();
+        documentService.deleteDocument(id, currentUser);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "מסמך נמחק בהצלחה");
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "מסמך נמחק בהצלחה");
 
-            return ResponseEntity.ok(response);
-
-        } catch (RuntimeException e) {
-            return buildErrorResponse(HttpStatus.NOT_FOUND, "מסמך לא נמצא");
-
-        } catch (Exception e) {
-            log.error("Failed to delete document: {}", id, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל במחיקת המסמך"
-            );
-        }
+        return ResponseEntity.ok(response);
     }
 
     // ==================== Statistics ====================
@@ -274,23 +209,14 @@ public class DocumentController {
     public ResponseEntity<Map<String, Object>> getDocumentStatistics(
             @PathVariable Long chatId) {
 
-        try {
-            DocumentService.DocumentStatistics stats = 
-                documentService.getDocumentStatistics(chatId);
+        DocumentService.DocumentStatistics stats = 
+            documentService.getDocumentStatistics(chatId);
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("data", stats);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("data", stats);
 
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            log.error("Failed to get document statistics for chat: {}", chatId, e);
-            return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "נכשל בקבלת סטטיסטיקות"
-            );
-        }
+        return ResponseEntity.ok(response);
     }
 
     // ==================== Helper Methods ====================
@@ -302,28 +228,16 @@ public class DocumentController {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !authentication.isAuthenticated()) {
-            throw new SecurityException("משתמש לא מחובר");
+            throw new UnauthorizedException("משתמש לא מחובר");
         }
 
         Object principal = authentication.getPrincipal();
 
         if (!(principal instanceof User)) {
-            throw new SecurityException("משתמש לא תקין");
+            throw new UnauthorizedException("משתמש לא תקין");
         }
 
         return (User) principal;
     }
 
-    /**
-     * Build error response
-     */
-    private ResponseEntity<Map<String, Object>> buildErrorResponse(
-            HttpStatus status, String message) {
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", false);
-        response.put("error", message);
-
-        return ResponseEntity.status(status).body(response);
-    }
 }

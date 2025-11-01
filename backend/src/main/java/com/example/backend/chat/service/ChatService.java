@@ -13,6 +13,10 @@ import com.example.backend.document.repository.DocumentRepository;
 import com.example.backend.chat.model.Message;
 import com.example.backend.chat.repository.MessageRepository;
 import com.example.backend.common.infrastructure.storage.S3Service;
+import com.example.backend.common.exception.ResourceNotFoundException;
+import com.example.backend.common.exception.ValidationException;
+import com.example.backend.common.exception.UnauthorizedException;
+import com.example.backend.common.exception.FileProcessingException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -119,7 +123,7 @@ public class ChatService {
             chat.setStatus(ChatStatus.FAILED);
             chat.setErrorMessage("נכשל בעיבוד מסמכים: " + e.getMessage());
             chatRepository.save(chat);
-            throw new RuntimeException("נכשל בעיבוד מסמכים", e);
+            throw FileProcessingException.uploadFailed("מסמכי השיחה");
         }
 
         // ==================== Return Response ====================
@@ -215,7 +219,7 @@ public class ChatService {
         log.info("Updating status for chat: {}", chatId);
 
         Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+            .orElseThrow(() -> new ResourceNotFoundException("שיחה", chatId));
 
         chat.decrementPendingDocuments();
 
@@ -234,7 +238,7 @@ public class ChatService {
         log.error("Marking chat: {} as FAILED. Error: {}", chatId, errorMessage);
 
         Chat chat = chatRepository.findById(chatId)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה"));
+            .orElseThrow(() -> new ResourceNotFoundException("שיחה", chatId));
 
         chat.setStatus(ChatStatus.FAILED);
         chat.setErrorMessage(errorMessage);
@@ -328,7 +332,7 @@ public class ChatService {
             log.error("========================================");
             log.error("❌ CRITICAL ERROR during deletion", e);
             log.error("========================================");
-            throw new RuntimeException("נכשל במחיקת השיחה: " + e.getMessage(), e);
+            throw new ResourceNotFoundException("נכשל במחיקת השיחה: " + e.getMessage());
         }
     }
         
@@ -338,8 +342,14 @@ public class ChatService {
      * Find chat by ID with permission check
      */
     private Chat findChatByIdAndUser(Long chatId, User user) {
-        return chatRepository.findByIdAndUserAndActiveTrue(chatId, user)
-            .orElseThrow(() -> new RuntimeException("שיחה לא נמצאה או אין הרשאה"));
+        Chat chat = chatRepository.findByIdAndActiveTrue(chatId)
+            .orElseThrow(() -> new ResourceNotFoundException("שיחה", chatId));
+        
+        if (!chat.getUser().getId().equals(user.getId())) {
+            throw new UnauthorizedException("שיחה", chatId);
+        }
+        
+        return chat;
     }
 
     /**
@@ -356,23 +366,29 @@ public class ChatService {
      */
     private void validateCreateChatRequest(CreateChatRequest request) {
         if (request.getTitle() == null || request.getTitle().trim().isEmpty()) {
-            throw new IllegalArgumentException("כותרת השיחה היא שדה חובה");
+            throw new ValidationException("title", "כותרת השיחה היא שדה חובה");
         }
 
         if (request.getFiles() == null || request.getFiles().isEmpty()) {
-            throw new IllegalArgumentException("חייב להעלות לפחות קובץ אחד");
+            throw new ValidationException("files", "חייב להעלות לפחות קובץ אחד");
         }
 
         if (!request.validateFileTypes()) {
-            throw new IllegalArgumentException("ניתן להעלות רק קבצי PDF");
+            throw FileProcessingException.invalidFileType(
+                "קבצים", 
+                "PDF"
+            );
         }
 
         if (request.hasEmptyFiles()) {
-            throw new IllegalArgumentException("אחד או יותר מהקבצים ריקים");
+            throw new ValidationException("files", "אחד או יותר מהקבצים ריקים");
         }
 
         if (request.hasOversizedFiles()) {
-            throw new IllegalArgumentException("אחד או יותר מהקבצים גדולים מ-50MB");
+            throw FileProcessingException.fileTooLarge(
+                "אחד מהקבצים", 
+                50L * 1024 * 1024
+            );
         }
     }
 
@@ -381,11 +397,11 @@ public class ChatService {
      */
     private void validateUser(User user) {
         if (user == null) {
-            throw new IllegalArgumentException("משתמש לא תקין");
+            throw new ValidationException("user", "משתמש לא תקין");
         }
 
         if (!user.isEnabled()) {
-            throw new SecurityException("משתמש לא מאומת");
+            throw new UnauthorizedException("משתמש לא מאומת");
         }
     }
 

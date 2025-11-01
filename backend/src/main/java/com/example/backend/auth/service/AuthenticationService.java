@@ -6,6 +6,11 @@ import com.example.backend.auth.dto.VerifyUserDto;
 import com.example.backend.user.model.User;
 import com.example.backend.user.repository.UserRepository;
 import com.example.backend.common.infrastructure.email.EmailService;
+import com.example.backend.common.exception.AuthenticationException;
+import com.example.backend.common.exception.ResourceNotFoundException;
+import com.example.backend.common.exception.DuplicateResourceException;
+import com.example.backend.common.exception.ValidationException; 
+
 import jakarta.mail.MessagingException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -55,11 +60,12 @@ public class AuthenticationService {
 
     public User authenticate(LoginUserDto input) {
         User user = userRepository.findByEmail(input.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("משתמש", input.getEmail()));
 
         if (!user.isEnabled()) {
-            throw new RuntimeException("Account not verified. Please verify your account.");
+            throw AuthenticationException.userNotVerified();
         }
+        
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         input.getEmail(),
@@ -71,47 +77,41 @@ public class AuthenticationService {
     }
 
     public void verifyUser(VerifyUserDto input) {
-        Optional<User> optionalUser = userRepository.findByEmail(input.getEmail());
-        if (optionalUser.isPresent()) {
-            User user = optionalUser.get();
-            if (user.getVerificationCodeExpiresAt().isBefore(LocalDateTime.now())) {
-                throw new RuntimeException("Verification code has expired");
-            }
-            if (user.getVerificationCode().equals(input.getVerificationCode())) {
-                user.setEnabled(true);
-                user.setVerificationCode(null);
-                user.setVerificationCodeExpiresAt(null);
-                userRepository.save(user);
-            } else {
-                throw new RuntimeException("Invalid verification code");
-            }
-        } else {
-            throw new RuntimeException("User not found");
+        User user = userRepository.findByEmail(input.getEmail())
+                .orElseThrow(() -> new ResourceNotFoundException("משתמש", input.getEmail()));
+        
+        if (user.getVerificationCodeExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new ValidationException("verificationCode", "קוד האימות פג תוקף");
         }
+        
+        if (!user.getVerificationCode().equals(input.getVerificationCode())) {
+            throw new ValidationException("verificationCode", "קוד אימות שגוי");
+        }
+        
+        user.setEnabled(true);
+        user.setVerificationCode(null);
+        user.setVerificationCodeExpiresAt(null);
+        userRepository.save(user);
     }
 
     public void resendVerificationCode(String email) {
-        Optional<User> optionalUser = userRepository.findByEmail(email);
-        if (optionalUser.isPresent()) {
-            User user = optionalUser.get();
-            if (user.isEnabled()) {
-                throw new RuntimeException("Account is already verified");
-            }
-            user.setVerificationCode(generateVerificationCode());
-            user.setVerificationCodeExpiresAt(LocalDateTime.now().plusHours(1));
-            sendVerificationEmail(user);
-            userRepository.save(user);
-        } else {
-            throw new RuntimeException("User not found");
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("משתמש", email));
+        
+        if (user.isEnabled()) {
+            throw new ValidationException("email", "החשבון כבר מאומת");
         }
+        
+        user.setVerificationCode(generateVerificationCode());
+        user.setVerificationCodeExpiresAt(LocalDateTime.now().plusHours(1));
+        sendVerificationEmail(user);
+        userRepository.save(user);
     }
 
     public boolean isEmailVerified(String email) {
-        Optional<User> optionalUser = userRepository.findByEmail(email);
-        if (optionalUser.isPresent()) {
-            return optionalUser.get().isEnabled();
-        }
-        throw new RuntimeException("User not found");
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("משתמש", email));
+        return user.isEnabled();
     }
 
     private void sendVerificationEmail(User user) {

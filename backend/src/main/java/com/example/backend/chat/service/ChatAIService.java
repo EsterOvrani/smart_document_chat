@@ -10,6 +10,10 @@ import com.example.backend.chat.repository.ChatRepository;
 import com.example.backend.chat.repository.MessageRepository;
 import com.example.backend.common.infrastructure.vectordb.QdrantVectorService;
 import com.example.backend.user.model.User;
+import com.example.backend.common.exception.ResourceNotFoundException;
+import com.example.backend.common.exception.ValidationException;
+import com.example.backend.common.exception.ExternalServiceException;
+import com.example.backend.common.exception.UnauthorizedException;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.data.embedding.Embedding;
@@ -85,8 +89,10 @@ public class ChatAIService {
             validateRequest(request);
 
             if (!chat.isReady()) {
-                throw new RuntimeException(
-                    "Chat not ready yet. Status: " + chat.getStatus());
+                throw new ValidationException(
+                    "chat", 
+                    "השיחה עדיין לא מוכנה. סטטוס: " + chat.getStatus()
+                );
             }
 
             // Save user's question
@@ -202,9 +208,13 @@ public class ChatAIService {
             
             return messages;
             
+        } catch (ResourceNotFoundException e) {
+            throw e; // מעביר הלאה את החריגה המקורית
+        } catch (UnauthorizedException e) {
+            throw e; // מעביר הלאה את החריגה המקורית
         } catch (Exception e) {
             log.error("❌ Error getting chat history for chatId: {}", chatId, e);
-            throw new RuntimeException("Failed to get chat history: " + e.getMessage(), e);
+            throw ExternalServiceException.vectorDbError("נכשל בקבלת היסטוריית שיחה");
         }
     }
 
@@ -245,8 +255,14 @@ public class ChatAIService {
     // ==================== Helper Methods (no changes) ====================
 
     private Chat validateAndGetChat(Long chatId, User user) {
-        return chatRepository.findByIdAndUserAndActiveTrue(chatId, user)
-            .orElseThrow(() -> new RuntimeException("Chat not found or no permission"));
+        Chat chat = chatRepository.findByIdAndActiveTrue(chatId)
+            .orElseThrow(() -> new ResourceNotFoundException("שיחה", chatId));
+        
+        if (!chat.getUser().getId().equals(user.getId())) {
+            throw new UnauthorizedException("שיחה", chatId);
+        }
+        
+        return chat;
     }
 
     private void validateRequest(AskQuestionRequest request) {
