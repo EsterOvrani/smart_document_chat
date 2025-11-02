@@ -168,20 +168,19 @@ EOF
         stage('🧪 Run Newman Tests') {
             steps {
                 script {
-                    cd tests;
                     echo '🧪 Running Newman API tests with TEST_MODE...'
                     sh '''
                         docker run --add-host=host.docker.internal:host-gateway \
-                          --network host \
-                          -v $(pwd)/tests/newman:/etc/newman \
-                          -t postman/newman:alpine \
-                          run collections/smart-doc-chat.postman_collection.json \
-                          -e environments/test.postman_environment.json \
-                          --timeout-request 30000 \
-                          --reporters cli,json \
-                          --reporter-json-export /etc/newman/newman-report.json \
-                          --bail
-                          
+                        --network host \
+                        -v ${WORKSPACE}/tests/newman:/etc/newman \
+                        -t postman/newman:alpine \
+                        run collections/smart-doc-chat.postman_collection.json \
+                        -e environments/test.postman_environment.json \
+                        --timeout-request 30000 \
+                        --reporters cli,json \
+                        --reporter-json-export /etc/newman/newman-report.json \
+                        --bail
+                        
                         echo "✅ All tests passed with TEST_MODE!"
                     '''
                 }
