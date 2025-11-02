@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Smart Document Chat API - CI/CD",
+    "name": "Smart Document Chat API - Full Test Suite",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -18,6 +18,10 @@
     },
     {
       "key": "chat_id",
+      "value": ""
+    },
+    {
+      "key": "message_id",
       "value": ""
     }
   ],
@@ -129,7 +133,9 @@
               "pm.test('Login successful', function() {",
               "    pm.response.to.have.status(200);",
               "    const response = pm.response.json();",
+              "    pm.expect(response.token).to.exist;",
               "    pm.collectionVariables.set('jwt_token', response.token);",
+              "    console.log('JWT Token saved:', response.token.substring(0, 20) + '...');",
               "});"
             ]
           }
@@ -150,7 +156,7 @@
       }
     },
     {
-      "name": "05 - Get All Chats",
+      "name": "05 - Get All Chats (Empty)",
       "event": [
         {
           "listen": "test",
@@ -160,6 +166,7 @@
               "    pm.response.to.have.status(200);",
               "    const response = pm.response.json();",
               "    pm.expect(response.success).to.be.true;",
+              "    console.log('Total chats:', response.data.totalCount);",
               "});"
             ]
           }
@@ -176,6 +183,394 @@
           "raw": "{{base_url}}/api/chats",
           "host": ["{{base_url}}"],
           "path": ["api", "chats"]
+        }
+      }
+    },
+    {
+      "name": "06 - Create Chat with PDF",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Chat created successfully', function() {",
+              "    pm.response.to.have.status(201);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "    pm.expect(response.chat.id).to.exist;",
+              "    pm.collectionVariables.set('chat_id', response.chat.id);",
+              "    console.log('Chat ID:', response.chat.id);",
+              "    console.log('Chat Status:', response.chat.status);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "title",
+              "value": "cv",
+              "type": "text"
+            },
+            {
+              "key": "files",
+              "type": "file",
+              "src": "/etc/newman/data/EsterOvrani.pdf"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/chats",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats"]
+        }
+      }
+    },
+    {
+      "name": "07 - Wait for Processing Complete (Polling)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get('polling_attempt')) {",
+              "    pm.collectionVariables.set('polling_attempt', 0);",
+              "    console.log('⏳ Starting to wait for document processing...');",
+              "    console.log('⏱️  Will check every 5 seconds (max 2 minutes)');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const maxAttempts = 24;",
+              "let attempt = pm.collectionVariables.get('polling_attempt') || 0;",
+              "attempt++;",
+              "pm.collectionVariables.set('polling_attempt', attempt);",
+              "",
+              "const response = pm.response.json();",
+              "const status = response.data.status;",
+              "const isReady = response.data.isReady;",
+              "const progress = response.data.overallProgress || 0;",
+              "",
+              "console.log(`🔄 Attempt ${attempt}/${maxAttempts}: Status=${status}, Progress=${progress}%, Ready=${isReady}`);",
+              "",
+              "if (isReady === true || status === 'READY') {",
+              "    console.log('✅ Document processing completed!');",
+              "    pm.collectionVariables.set('polling_attempt', 0);",
+              "    pm.test('Processing completed successfully', function() {",
+              "        pm.expect(isReady).to.be.true;",
+              "    });",
+              "} else if (status === 'FAILED') {",
+              "    console.log('❌ Document processing FAILED!');",
+              "    pm.collectionVariables.set('polling_attempt', 0);",
+              "    pm.test('Processing failed', function() {",
+              "        pm.expect(status).to.not.equal('FAILED');",
+              "    });",
+              "} else if (attempt >= maxAttempts) {",
+              "    console.log('⏱️ Timeout: Processing took more than 2 minutes');",
+              "    pm.collectionVariables.set('polling_attempt', 0);",
+              "    pm.test('Processing completed within timeout', function() {",
+              "        pm.expect(attempt).to.be.below(maxAttempts);",
+              "    });",
+              "} else {",
+              "    console.log(`⏳ Still processing... waiting 5 seconds before next check`);",
+              "    setTimeout(function() {}, 5000);",
+              "    postman.setNextRequest('07 - Wait for Processing Complete (Polling)');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats/{{chat_id}}/processing-status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats", "{{chat_id}}", "processing-status"]
+        }
+      }
+    },
+    {
+      "name": "08 - Ask Question About Ester's Skills",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Question answered successfully', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "    pm.expect(response.data.answer).to.exist;",
+              "    pm.expect(response.data.messageId).to.exist;",
+              "    pm.collectionVariables.set('message_id', response.data.messageId);",
+              "    console.log('💡 Answer:', response.data.answer.substring(0, 150) + '...');",
+              "    console.log('📊 Confidence:', (response.data.confidence * 100).toFixed(1) + '%');",
+              "    console.log('📚 Sources:', response.data.sources ? response.data.sources.length : 0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"question\": \"what are Ester's skills?\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/chats/{{chat_id}}/ask",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats", "{{chat_id}}", "ask"]
+        }
+      }
+    },
+    {
+      "name": "09 - Get Chat Messages",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Messages retrieved successfully', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "    pm.expect(response.data).to.be.an('array');",
+              "    console.log('💬 Total Messages:', response.count);",
+              "    response.data.forEach((msg, idx) => {",
+              "        console.log(`   ${idx + 1}. [${msg.role}]: ${msg.content.substring(0, 60)}...`);",
+              "    });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats/{{chat_id}}/messages",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats", "{{chat_id}}", "messages"]
+        }
+      }
+    },
+    {
+      "name": "10 - Get Chat Details",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Chat details retrieved', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    console.log('Chat Title:', response.data.title);",
+              "    console.log('Status:', response.data.status);",
+              "    console.log('Is Ready:', response.data.isReady);",
+              "    console.log('Document Count:', response.data.documentCount);",
+              "    console.log('Message Count:', response.data.messageCount);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats/{{chat_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats", "{{chat_id}}"]
+        }
+      }
+    },
+    {
+      "name": "11 - Get Documents in Chat",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Documents retrieved', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    console.log('Total Documents:', response.count);",
+              "    response.data.forEach((doc, idx) => {",
+              "        console.log(`Doc ${idx + 1}: ${doc.originalFileName} [${doc.processingStatus}]`);",
+              "    });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/documents/chat/{{chat_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "documents", "chat", "{{chat_id}}"]
+        }
+      }
+    },
+    {
+      "name": "12 - Get User Statistics",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Statistics retrieved', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    console.log('Total Documents:', response.data.totalDocuments);",
+              "    console.log('Total Messages:', response.data.totalMessages);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats/statistics",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats", "statistics"]
+        }
+      }
+    },
+    {
+      "name": "13 - Delete Chat",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Chat deleted successfully', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "    console.log('🗑️ Chat deleted successfully');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats/{{chat_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats", "{{chat_id}}"]
+        }
+      }
+    },
+    {
+      "name": "14 - Verify Chat Deleted",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Chat list is empty after deletion', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "    pm.expect(response.data.totalCount).to.equal(0);",
+              "    console.log('✅ Verified: No chats remaining');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats"]
+        }
+      }
+    },
+    {
+      "name": "15 - Logout",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Logout successful', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "    console.log('👋 User logged out successfully');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/auth/logout",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "logout"]
         }
       }
     }
