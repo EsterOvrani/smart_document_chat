@@ -16,10 +16,21 @@ pipeline {
                 script {
                     echo '🧹 Cleaning up old containers and images...'
                     sh '''
+                        # שמור את ID של קונטיינר Jenkins
+                        JENKINS_CONTAINER_ID=$(hostname)
+                        
+                        # עצור רק containers של הפרויקט (לא Jenkins!)
                         docker-compose down -v || true
-                        docker stop $(docker ps -aq) 2>/dev/null || true
-                        docker rm -f $(docker ps -aq) 2>/dev/null || true
-                        docker system prune -a -f --volumes || true
+                        
+                        # עצור containers חוץ מJenkins
+                        docker ps -aq | grep -v ${JENKINS_CONTAINER_ID} | xargs -r docker stop 2>/dev/null || true
+                        docker ps -aq | grep -v ${JENKINS_CONTAINER_ID} | xargs -r docker rm -f 2>/dev/null || true
+                        
+                        # נקה images ישנים (לא containers רצים)
+                        docker image prune -a -f || true
+                        docker volume prune -f || true
+                        
+                        echo "✅ Cleanup completed (Jenkins container preserved)"
                     '''
                 }
             }
