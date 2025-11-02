@@ -1,0 +1,183 @@
+{
+  "info": {
+    "name": "Smart Document Chat API - CI/CD",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "{{base_url}}"
+    },
+    {
+      "key": "jwt_token",
+      "value": ""
+    },
+    {
+      "key": "test_email",
+      "value": ""
+    },
+    {
+      "key": "chat_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Health Check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Server is running', function() {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response time < 2s', function() {",
+              "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/auth/status",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "status"]
+        }
+      }
+    },
+    {
+      "name": "02 - Register User",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const timestamp = new Date().getTime();",
+              "const email = `test-${timestamp}@test.com`;",
+              "pm.collectionVariables.set('test_email', email);",
+              "console.log('Test email:', email);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Registration successful', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"Test123456!\",\n  \"username\": \"testuser-{{$timestamp}}\",\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/register",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "register"]
+        }
+      }
+    },
+    {
+      "name": "03 - Verify User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Verification successful', function() {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"verificationCode\": \"999999\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/verify",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "verify"]
+        }
+      }
+    },
+    {
+      "name": "04 - Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Login successful', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.collectionVariables.set('jwt_token', response.token);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"Test123456!\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "05 - Get All Chats",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Get chats successful', function() {",
+              "    pm.response.to.have.status(200);",
+              "    const response = pm.response.json();",
+              "    pm.expect(response.success).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [{"key": "token", "value": "{{jwt_token}}"}]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/chats",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chats"]
+        }
+      }
+    }
+  ]
+}

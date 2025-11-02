@@ -6,21 +6,26 @@ import com.example.backend.auth.dto.VerifyUserDto;
 import com.example.backend.user.model.User;
 import com.example.backend.user.repository.UserRepository;
 import com.example.backend.common.infrastructure.email.EmailService;
+import com.example.backend.config.TestConfig;
 import com.example.backend.common.exception.AuthenticationException;
 import com.example.backend.common.exception.ResourceNotFoundException;
 import com.example.backend.common.exception.DuplicateResourceException;
 import com.example.backend.common.exception.ValidationException; 
 
 import jakarta.mail.MessagingException;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Random;
 
+@Slf4j
 @Service
 public class AuthenticationService {
     private final UserRepository userRepository;
@@ -40,24 +45,36 @@ public class AuthenticationService {
         this.emailService = emailService;
     }
 
+    @Autowired
+    private TestConfig testConfig; 
+    
     public User signup(RegisterUserDto input) {
         User user = new User();
-
         user.setUsername(input.getUsername());
         user.setEmail(input.getEmail());
         user.setPassword(passwordEncoder.encode(input.getPassword()));
         user.setFirstName(input.getFirstName());
         user.setLastName(input.getLastName());
 
-        user.setVerificationCode(generateVerificationCode());
-        user.setVerificationCodeExpiresAt(LocalDateTime.now().plusMinutes(15));
-        user.setEnabled(false);
-
-        sendVerificationEmail(user);
+        // ⭐ Test Mode Logic
+        if (testConfig.isBypassEmailVerification()) {
+            user.setEnabled(true); // מיד מאומת!
+            user.setVerificationCode(null);
+            user.setVerificationCodeExpiresAt(null);
+            log.warn("🔶 TEST MODE: User automatically verified!");
+        } else {
+            user.setVerificationCode(
+                testConfig.isTestModeEnabled() 
+                    ? testConfig.getFixedVerificationCode() // קוד קבוע לבדיקות
+                    : generateVerificationCode() // קוד רנדומלי
+            );
+            user.setVerificationCodeExpiresAt(LocalDateTime.now().plusMinutes(15));
+            user.setEnabled(false);
+            sendVerificationEmail(user);
+        }
 
         return userRepository.save(user);
     }
-
     public User authenticate(LoginUserDto input) {
         User user = userRepository.findByEmail(input.getEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("משתמש", input.getEmail()));
@@ -80,6 +97,18 @@ public class AuthenticationService {
         User user = userRepository.findByEmail(input.getEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("משתמש", input.getEmail()));
         
+        // ⭐ Test Mode: קוד תמיד נכון
+        if (testConfig.isTestModeEnabled() && 
+            input.getVerificationCode().equals(testConfig.getFixedVerificationCode())) {
+            user.setEnabled(true);
+            user.setVerificationCode(null);
+            user.setVerificationCodeExpiresAt(null);
+            userRepository.save(user);
+            log.warn("🔶 TEST MODE: Verification bypassed with fixed code!");
+            return;
+        }
+        
+        // Regular verification logic
         if (user.getVerificationCodeExpiresAt().isBefore(LocalDateTime.now())) {
             throw new ValidationException("verificationCode", "קוד האימות פג תוקף");
         }
