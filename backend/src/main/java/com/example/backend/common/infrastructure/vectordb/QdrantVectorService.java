@@ -85,11 +85,16 @@ public class QdrantVectorService {
                 cleanTitle = cleanTitle.substring(0, 50);
             }
 
-            // ✅ שם קולקשן: שם_השיחה_תאריך
             String timestamp = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
 
             collectionName = cleanTitle + "_" + timestamp;
+
+            log.info("Creating new collection: {}", collectionName);
+
+            // יצור את הקולקשין דרך REST API
+            createCollectionIfNotExists(collectionName);
+            
 
             // ✅ המתן עד שהקולקשן מוכן (מקסימום 30 שניות)
             if (!waitForCollectionReady(collectionName, 30)) {
