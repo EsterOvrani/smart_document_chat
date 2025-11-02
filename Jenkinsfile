@@ -108,11 +108,23 @@ EOF
                 sh '''
                     docker-compose build --no-cache
                     
-                    # Tag test images distinctly
-                    docker tag backend:latest backend:test
-                    docker tag frontend:latest frontend:test
+                    # מצא את השמות האמיתיים
+                    BACKEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep backend | head -1)
+                    FRONTEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep frontend | head -1)
                     
-                    echo "✅ TEST images built successfully"
+                    echo "Found images:"
+                    echo "  Backend: $BACKEND_IMAGE"
+                    echo "  Frontend: $FRONTEND_IMAGE"
+                    
+                    # Tag test images
+                    docker tag $BACKEND_IMAGE backend:test
+                    docker tag $FRONTEND_IMAGE frontend:test
+                    
+                    # Tag latest
+                    docker tag $BACKEND_IMAGE backend:latest
+                    docker tag $FRONTEND_IMAGE frontend:latest
+                    
+                    echo "✅ TEST images built and tagged"
                 '''
             }
         }
