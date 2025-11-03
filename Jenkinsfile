@@ -233,7 +233,6 @@ AWS_S3_BUCKET=${AWS_S3_BUCKET}
 REDIS_HOST=redis
 REDIS_PORT=6379
 
-# ⚠️ NO TEST_MODE - This is PRODUCTION!
 EOF
                             
                             echo "✅ PRODUCTION .env created WITHOUT TEST_MODE"
