@@ -11,23 +11,28 @@ pipeline {
     }
     
     stages {
-        stage('🧹 Cleanup') {
+        stage('🧹 Cleanup Old Containers') {
             steps {
                 script {
-                    echo '🧹 Cleaning up old containers and images...'
+                    echo '🧹 Cleaning up old containers and images (preserving Jenkins)...'
                     sh '''
                         # שמור את ID של קונטיינר Jenkins
                         JENKINS_CONTAINER_ID=$(hostname)
                         
-                        # עצור רק containers של הפרויקט (לא Jenkins!)
-                        docker-compose down -v || true
+                        echo "Jenkins Container ID: $JENKINS_CONTAINER_ID (will be preserved)"
                         
-                        # עצור containers חוץ מJenkins
+                        # עצור docker-compose containers (אם יש)
+                        docker-compose -f docker-compose.test.yml down -v 2>/dev/null || true
+                        docker-compose down -v 2>/dev/null || true
+                        
+                        # עצור כל הcontainers חוץ מJenkins
                         docker ps -aq | grep -v ${JENKINS_CONTAINER_ID} | xargs -r docker stop 2>/dev/null || true
                         docker ps -aq | grep -v ${JENKINS_CONTAINER_ID} | xargs -r docker rm -f 2>/dev/null || true
                         
-                        # נקה images ישנים (לא containers רצים)
-                        docker image prune -a -f || true
+                        # נקה images ישנים (לא של Jenkins!)
+                        docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep -v jenkins | awk '{print $2}' | xargs -r docker rmi -f 2>/dev/null || true
+                        
+                        # נקה volumes
                         docker volume prune -f || true
                         
                         echo "✅ Cleanup completed (Jenkins container preserved)"
@@ -43,7 +48,7 @@ pipeline {
             }
         }
         
-        stage('🔐 Create TEST .env (with TEST_MODE)') {
+        stage('🔐 Create TEST .env') {
             steps {
                 script {
                     echo '🔐 Creating TEST .env file with TEST_MODE enabled...'
@@ -102,137 +107,90 @@ EOF
             }
         }
         
-        stage('🏗️ Build TEST Images') {
+        stage('🏗️ Build TEST Environment') {
             steps {
-                echo '🏗️ Building TEST images (with TEST_MODE)...'
+                echo '🏗️ Building TEST docker-compose images...'
                 sh '''
-                    docker-compose build --no-cache
+                    # בנה את כל הimages (כולל Newman)
+                    docker-compose -f docker-compose.test.yml build --no-cache
                     
-                    # מצא את השמות האמיתיים
-                    BACKEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep backend | head -1)
-                    FRONTEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep frontend | head -1)
-                    
-                    echo "Found images:"
-                    echo "  Backend: $BACKEND_IMAGE"
-                    echo "  Frontend: $FRONTEND_IMAGE"
-                    
-                    # Tag test images
-                    docker tag $BACKEND_IMAGE backend:test
-                    docker tag $FRONTEND_IMAGE frontend:test
-                    
-                    # Tag latest
-                    docker tag $BACKEND_IMAGE backend:latest
-                    docker tag $FRONTEND_IMAGE frontend:latest
-                    
-                    echo "✅ TEST images built and tagged"
+                    echo "✅ TEST environment images built"
                 '''
             }
         }
         
-        stage('🚀 Start Test Environment') {
+        stage('🚀 Start TEST Environment & Run Tests') {
             steps {
                 script {
-                    echo '🚀 Starting test environment...'
-                    sh 'docker-compose up -d'
-                    
-                    echo '⏳ Waiting for services to be healthy...'
+                    echo '🚀 Starting TEST environment (including Newman)...'
                     sh '''
+                        # הרץ את כל השירותים (backend, postgres, redis, qdrant, frontend, nginx)
+                        docker-compose -f docker-compose.test.yml up -d postgres redis qdrant backend frontend nginx
+                        
+                        echo "⏳ Waiting for backend to be ready..."
                         max_attempts=60
                         attempt=0
                         
                         while [ $attempt -lt $max_attempts ]; do
-                            if curl -s http://localhost:8080/auth/status > /dev/null 2>&1; then
+                            # בדוק שbackend מגיב
+                            if docker-compose -f docker-compose.test.yml exec -T backend curl -sf http://localhost:8080/auth/status > /dev/null 2>&1; then
                                 echo "✅ Backend is ready!"
                                 break
                             fi
                             
                             attempt=$((attempt + 1))
-                            echo "⏳ Attempt $attempt/$max_attempts - waiting..."
+                            echo "⏳ Attempt $attempt/$max_attempts - waiting for backend..."
                             sleep 5
                         done
                         
                         if [ $attempt -eq $max_attempts ]; then
                             echo "❌ Backend failed to start"
-                            docker-compose logs backend
+                            docker-compose -f docker-compose.test.yml logs backend
                             exit 1
                         fi
                         
-                        # Verify TEST_MODE is active
-                        echo "🔍 Verifying TEST_MODE is enabled..."
-                        docker-compose exec -T backend env | grep TEST_MODE || echo "⚠️ TEST_MODE not found!"
-                    '''
-                }
-            }
-        }
-        
-        stage('🧪 Run Newman Tests') {
-            steps {
-                script {
-                    echo '🧪 Building custom Newman image with test files...'
-                    sh '''
-                        cd tests
-                        docker build -t newman-tests:latest .
-                        cd ..
-                    '''
-                    
-                    echo '🧪 Running Newman API tests with TEST_MODE...'
-                    sh '''
-                        # מצא את שם ה-network (docker-compose יוצר אותו עם prefix)
-                        NETWORK_NAME=$(docker network ls --format "{{.Name}}" | grep app-network | head -1)
+                        echo "🧪 Running Newman tests..."
+                        # הרץ את Newman service
+                        docker-compose -f docker-compose.test.yml up newman
                         
-                        if [ -z "$NETWORK_NAME" ]; then
-                            echo "❌ Error: Cannot find app-network!"
-                            echo "Available networks:"
-                            docker network ls
+                        # בדוק exit code של Newman
+                        NEWMAN_EXIT_CODE=$(docker inspect newman-tests --format='{{.State.ExitCode}}')
+                        
+                        echo "Newman exit code: $NEWMAN_EXIT_CODE"
+                        
+                        if [ "$NEWMAN_EXIT_CODE" != "0" ]; then
+                            echo "❌ Newman tests failed!"
+                            docker-compose -f docker-compose.test.yml logs newman
                             exit 1
                         fi
                         
-                        echo "✅ Found network: $NETWORK_NAME"
-                        echo "🧪 Running Newman tests on network: $NETWORK_NAME"
-                        
-                        # הרץ Newman על אותו network כמו backend!
-                        docker run \
-                        --network $NETWORK_NAME \
-                        -t newman-tests:latest \
-                        run collections/smart-doc-chat.postman_collection.json \
-                        -e environments/test.postman_environment.json \
-                        --timeout-request 30000 \
-                        --reporters cli \
-                        --bail
-                        
-                        echo "✅ All tests passed with TEST_MODE!"
+                        echo "✅ All Newman tests passed!"
                     '''
                 }
             }
             post {
                 always {
-                    echo '📊 Tests completed'
+                    sh 'docker-compose -f docker-compose.test.yml logs newman > newman-output.log 2>&1 || true'
+                    archiveArtifacts artifacts: 'newman-output.log', allowEmptyArchive: true
                 }
             }
         }
         
-        stage('🗑️ Cleanup Test Environment') {
+        stage('🗑️ Cleanup TEST Environment') {
             steps {
                 script {
-                    echo '🗑️ Stopping and removing test containers...'
+                    echo '🗑️ Stopping and removing TEST containers...'
                     sh '''
-                        docker-compose down -v
+                        # עצור והסר את כל containers של הטסט
+                        docker-compose -f docker-compose.test.yml down -v
                         
-                        # Remove test images
-                        docker rmi backend:test || true
-                        docker rmi frontend:test || true
-                        
-                        # Remove old backend/frontend images
-                        docker rmi backend:latest || true
-                        docker rmi frontend:latest || true
-                        
-                        echo "✅ Test environment cleaned up"
+                        echo "✅ TEST environment cleaned up"
                     '''
                 }
             }
         }
         
-        stage('🔐 Create PRODUCTION .env (WITHOUT TEST_MODE)') {
+        stage('🔐 Create PRODUCTION .env') {
             steps {
                 script {
                     echo '🔐 Creating PRODUCTION .env file WITHOUT TEST_MODE...'
@@ -247,10 +205,10 @@ EOF
                         string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')
                     ]) {
                         sh '''
-                            # 🚨 IMPORTANT: Remove old .env completely!
+                            # מחק את .env הישן
                             rm -f backend/.env
                             
-                            # Create PRODUCTION .env WITHOUT TEST_MODE
+                            # צור PRODUCTION .env ללא TEST_MODE
                             cat > backend/.env << 'EOF'
 # ==================== Database ====================
 SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
@@ -289,8 +247,7 @@ EOF
                             
                             echo "✅ PRODUCTION .env created WITHOUT TEST_MODE"
                             
-                            # Verify TEST_MODE is NOT present
-                            echo "🔍 Verifying TEST_MODE is NOT in .env..."
+                            # וודא שTEST_MODE לא קיים
                             if grep -q "TEST_MODE" backend/.env; then
                                 echo "❌ ERROR: TEST_MODE found in production .env!"
                                 exit 1
@@ -307,12 +264,12 @@ EOF
             steps {
                 echo '🏗️ Building PRODUCTION images (WITHOUT TEST_MODE)...'
                 sh '''
-                    # Force rebuild without cache
-                    docker-compose build --no-cache
+                    # בנה רק backend ו-frontend (לא nginx או newman)
+                    docker-compose build --no-cache backend frontend
                     
                     echo "✅ PRODUCTION images built successfully"
                     
-                    # Verify the new images exist
+                    # רשימת images
                     docker images | grep -E "backend|frontend"
                 '''
             }
@@ -323,8 +280,8 @@ EOF
                 script {
                     echo '🔍 Verifying production images do NOT contain TEST_MODE...'
                     sh '''
-                        # Start container temporarily to check
-                        docker run --rm backend:latest env > /tmp/backend-env.txt || true
+                        # בדוק שbackend image לא מכיל TEST_MODE
+                        docker run --rm --entrypoint env backend:latest > /tmp/backend-env.txt || true
                         
                         if grep -q "TEST_MODE=true" /tmp/backend-env.txt; then
                             echo "❌ CRITICAL ERROR: TEST_MODE found in production image!"
@@ -371,7 +328,7 @@ EOF
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
                         sh '''
-                            echo "${DOCKER_PASS}" | docker login ${DOCKER_REGISTRY} -u "${DOCKER_USER}" --password-stdin
+                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
                             
                             # Push backend
                             docker push ${DOCKER_REGISTRY}/smart-doc-backend:${IMAGE_TAG}
@@ -381,7 +338,7 @@ EOF
                             docker push ${DOCKER_REGISTRY}/smart-doc-frontend:${IMAGE_TAG}
                             docker push ${DOCKER_REGISTRY}/smart-doc-frontend:latest
                             
-                            docker logout ${DOCKER_REGISTRY}
+                            docker logout
                             
                             echo "✅ Production images deployed successfully!"
                         '''
@@ -407,15 +364,29 @@ EOF
         
         failure {
             echo '❌ Pipeline failed!'
-            sh 'docker-compose logs --tail=100 || true'
+            sh '''
+                echo "📋 Current containers:"
+                docker ps -a
+                
+                echo "📋 Recent logs:"
+                docker-compose -f docker-compose.test.yml logs --tail=100 || true
+            '''
         }
         
         cleanup {
             echo '🧹 Final cleanup...'
             sh '''
-                docker-compose down -v || true
+                # וודא שכל הtest containers נעצרו
+                docker-compose -f docker-compose.test.yml down -v 2>/dev/null || true
+                docker-compose down -v 2>/dev/null || true
+                
+                # נקה .env
                 rm -f backend/.env || true
+                
+                # נקה system
                 docker system prune -f || true
+                
+                echo "✅ Final cleanup completed"
             '''
         }
     }
