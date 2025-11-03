@@ -122,29 +122,20 @@ EOF
         stage('🚀 Start TEST Environment & Run Tests') {
             steps {
                 script {
-                    echo '🚀 Starting TEST environment (including Newman)...'
+                    echo '🚀 Starting TEST environment...'
                     sh '''
-                        # הרץ את כל השירותים (backend, postgres, redis, qdrant, frontend, nginx)
+                        # הרץ את כל השירותים וחכה שיהיו healthy
+                        echo "⏳ Starting services and waiting for health checks..."
                         docker-compose -f docker-compose.test.yml up -d postgres redis qdrant backend frontend nginx
                         
-                        echo "⏳ Waiting for backend to be ready..."
-                        max_attempts=60
-                        attempt=0
+                        # חכה שהבקנד יהיה healthy (docker-compose עושה את זה בשבילנו!)
+                        echo "⏳ Waiting for backend to be healthy..."
+                        docker-compose -f docker-compose.test.yml up -d --wait backend
                         
-                        while [ $attempt -lt $max_attempts ]; do
-                            # בדוק שbackend מגיב
-                            if docker-compose -f docker-compose.test.yml exec -T backend curl -sf http://localhost:8080/auth/status > /dev/null 2>&1; then
-                                echo "✅ Backend is ready!"
-                                break
-                            fi
-                            
-                            attempt=$((attempt + 1))
-                            echo "⏳ Attempt $attempt/$max_attempts - waiting for backend..."
-                            sleep 5
-                        done
-                        
-                        if [ $attempt -eq $max_attempts ]; then
-                            echo "❌ Backend failed to start"
+                        if [ $? -eq 0 ]; then
+                            echo "✅ Backend is healthy and ready!"
+                        else
+                            echo "❌ Backend health check failed!"
                             docker-compose -f docker-compose.test.yml logs backend
                             exit 1
                         fi

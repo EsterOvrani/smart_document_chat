@@ -81,6 +81,13 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+    # ✅ הוסף healthcheck!
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/auth/status"]
+      interval: 5s           # בדוק כל 5 שניות
+      timeout: 3s            # זמן תגובה מקסימלי
+      retries: 60            # נסה 60 פעמים (5 דקות)
+      start_period: 40s      # תן לבקנד 40 שניות להתחיל לפני בדיקות
     networks:
       - app-network
     restart: unless-stopped
