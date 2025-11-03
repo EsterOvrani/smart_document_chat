@@ -63,7 +63,7 @@ pipeline {
                         string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')
                     ]) {
                         sh '''
-                            cat > backend/.env << 'EOF'
+                            cat > backend/.env << EOF
 # ==================== Database ====================
 SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
 SPRING_DATASOURCE_USERNAME=smartdoc_user
@@ -209,7 +209,7 @@ EOF
                             rm -f backend/.env
                             
                             # צור PRODUCTION .env ללא TEST_MODE
-                            cat > backend/.env << 'EOF'
+                            cat > backend/.env << EOF
 # ==================== Database ====================
 SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
 SPRING_DATASOURCE_USERNAME=smartdoc_user
