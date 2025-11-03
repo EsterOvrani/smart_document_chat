@@ -170,7 +170,6 @@ EOF
                 script {
                     echo '🧪 Building custom Newman image with test files...'
                     sh '''
-                        # בנה Newman image מתיקיית tests
                         cd tests
                         docker build -t newman-tests:latest .
                         cd ..
@@ -178,9 +177,22 @@ EOF
                     
                     echo '🧪 Running Newman API tests with TEST_MODE...'
                     sh '''
-                        # הרץ את Newman ללא volume mounts!
-                        docker run --add-host=host.docker.internal:host-gateway \
-                        --network host \
+                        # מצא את שם ה-network (docker-compose יוצר אותו עם prefix)
+                        NETWORK_NAME=$(docker network ls --format "{{.Name}}" | grep app-network | head -1)
+                        
+                        if [ -z "$NETWORK_NAME" ]; then
+                            echo "❌ Error: Cannot find app-network!"
+                            echo "Available networks:"
+                            docker network ls
+                            exit 1
+                        fi
+                        
+                        echo "✅ Found network: $NETWORK_NAME"
+                        echo "🧪 Running Newman tests on network: $NETWORK_NAME"
+                        
+                        # הרץ Newman על אותו network כמו backend!
+                        docker run \
+                        --network $NETWORK_NAME \
                         -t newman-tests:latest \
                         run collections/smart-doc-chat.postman_collection.json \
                         -e environments/test.postman_environment.json \
