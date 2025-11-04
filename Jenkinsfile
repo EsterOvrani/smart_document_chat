@@ -291,17 +291,17 @@ EOF
                 script {
                     echo '📦 Tagging production images...'
                     sh '''
-                        # Tag backend with build number and latest
-                        docker tag backend-prod:latest ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}
-                        docker tag backend-prod:latest ${DOCKER_REGISTRY}/backend-prod:latest
+                        # Tag backend with project prefix
+                        docker tag backend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}
+                        docker tag backend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-backend:latest
                         
-                        # Tag frontend with build number and latest
-                        docker tag frontend-prod:latest ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}
-                        docker tag frontend-prod:latest ${DOCKER_REGISTRY}/frontend-prod:latest
+                        # Tag frontend with project prefix
+                        docker tag frontend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}
+                        docker tag frontend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-frontend:latest
                         
                         echo "✅ Images tagged for production deployment"
-                        echo "   Backend: ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}"
-                        echo "   Frontend: ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}"
+                        echo "   Backend:  ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}"
+                        echo "   Frontend: ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}"
                     '''
                 }
             }
@@ -321,19 +321,19 @@ EOF
                             
                             # Push backend with version tag and latest
                             echo "📤 Pushing backend-prod:${IMAGE_TAG}..."
-                            docker push ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}
-                            docker push ${DOCKER_REGISTRY}/backend-prod:latest
+                            docker push ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}
+                            docker push ${DOCKER_REGISTRY}/smart-doc-chat-backend:latest
                             
                             # Push frontend with version tag and latest
                             echo "📤 Pushing frontend-prod:${IMAGE_TAG}..."
-                            docker push ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}
-                            docker push ${DOCKER_REGISTRY}/frontend-prod:latest
+                            docker push ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}
+                            docker push ${DOCKER_REGISTRY}/smart-doc-chat-frontend:latest
                             
                             docker logout
                             
                             echo "✅ Production images deployed successfully!"
-                            echo "   Backend: ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}"
-                            echo "   Frontend: ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}"
+                            echo "   Backend: ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}"
+                            echo "   Frontend: ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}"
                         '''
                     }
                 }
