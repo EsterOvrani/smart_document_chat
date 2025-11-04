@@ -270,8 +270,8 @@ EOF
                 script {
                     echo '🔍 Verifying production images do NOT contain TEST_MODE...'
                     sh '''
-                        # בדוק שbackend image לא מכיל TEST_MODE
-                        docker run --rm --entrypoint env backend:latest > /tmp/backend-env.txt || true
+                        # בדוק שbackend-prod image לא מכיל TEST_MODE
+                        docker run --rm --entrypoint env backend-prod:latest > /tmp/backend-env.txt || true
                         
                         if grep -q "TEST_MODE=true" /tmp/backend-env.txt; then
                             echo "❌ CRITICAL ERROR: TEST_MODE found in production image!"
@@ -291,15 +291,17 @@ EOF
                 script {
                     echo '📦 Tagging production images...'
                     sh '''
-                        # Tag backend
-                        docker tag backend:latest ${DOCKER_REGISTRY}/smart-doc-backend:${IMAGE_TAG}
-                        docker tag backend:latest ${DOCKER_REGISTRY}/smart-doc-backend:latest
+                        # Tag backend with build number and latest
+                        docker tag backend-prod:latest ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}
+                        docker tag backend-prod:latest ${DOCKER_REGISTRY}/backend-prod:latest
                         
-                        # Tag frontend
-                        docker tag frontend:latest ${DOCKER_REGISTRY}/smart-doc-frontend:${IMAGE_TAG}
-                        docker tag frontend:latest ${DOCKER_REGISTRY}/smart-doc-frontend:latest
+                        # Tag frontend with build number and latest
+                        docker tag frontend-prod:latest ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}
+                        docker tag frontend-prod:latest ${DOCKER_REGISTRY}/frontend-prod:latest
                         
                         echo "✅ Images tagged for production deployment"
+                        echo "   Backend: ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}"
+                        echo "   Frontend: ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}"
                     '''
                 }
             }
@@ -320,17 +322,21 @@ EOF
                         sh '''
                             echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
                             
-                            # Push backend
-                            docker push ${DOCKER_REGISTRY}/smart-doc-backend:${IMAGE_TAG}
-                            docker push ${DOCKER_REGISTRY}/smart-doc-backend:latest
+                            # Push backend with version tag and latest
+                            echo "📤 Pushing backend-prod:${IMAGE_TAG}..."
+                            docker push ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}
+                            docker push ${DOCKER_REGISTRY}/backend-prod:latest
                             
-                            # Push frontend
-                            docker push ${DOCKER_REGISTRY}/smart-doc-frontend:${IMAGE_TAG}
-                            docker push ${DOCKER_REGISTRY}/smart-doc-frontend:latest
+                            # Push frontend with version tag and latest
+                            echo "📤 Pushing frontend-prod:${IMAGE_TAG}..."
+                            docker push ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}
+                            docker push ${DOCKER_REGISTRY}/frontend-prod:latest
                             
                             docker logout
                             
                             echo "✅ Production images deployed successfully!"
+                            echo "   Backend: ${DOCKER_REGISTRY}/backend-prod:${IMAGE_TAG}"
+                            echo "   Frontend: ${DOCKER_REGISTRY}/frontend-prod:${IMAGE_TAG}"
                         '''
                     }
                 }

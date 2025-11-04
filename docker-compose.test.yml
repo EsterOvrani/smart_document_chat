@@ -60,6 +60,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: backend-test:latest
     container_name: spring-backend
     env_file:
       - ./backend/.env
@@ -97,6 +98,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: frontend-test:latest
     container_name: react-frontend
     ports:
       - "3000:3000"
