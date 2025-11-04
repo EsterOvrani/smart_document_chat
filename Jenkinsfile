@@ -308,9 +308,6 @@ EOF
         }
         
         stage('🚢 Deploy to Registry') {
-            when {
-                branch 'main'
-            }
             steps {
                 script {
                     echo '🚢 Pushing PRODUCTION images to registry...'
