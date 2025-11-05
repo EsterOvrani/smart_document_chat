@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # ==================== PostgreSQL ====================
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-smart-doc-chat
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: smartdocumentchat
+      POSTGRES_USER: smartdoc_user
+      POSTGRES_PASSWORD: smartdoc_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartdoc_user -d smartdocumentchat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== Redis Cache ====================
+  redis:
+    image: redis:7-alpine
+    container_name: redis-smart-doc-chat
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== Qdrant ====================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-smart-doc-chat
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== Backend (מ-Docker Hub) ====================
+  backend:
+    image: esterovrani/smart-doc-chat-backend:latest
+    container_name: spring-backend
+    env_file:
+      - ./backend/.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdocumentchat
+      SPRING_DATASOURCE_USERNAME: smartdoc_user
+      SPRING_DATASOURCE_PASSWORD: smartdoc_password
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6334
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FRONTEND_URL: http://localhost
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== Frontend (מ-Docker Hub) ====================
+  frontend:
+    image: esterovrani/smart-doc-chat-frontend:latest
+    container_name: react-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==================== Nginx (Reverse Proxy) ====================
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+# ==================== Networks ====================
+networks:
+  app-network:
+    driver: bridge
+
+# ==================== Volumes ====================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  qdrant_storage:
+    driver: local
