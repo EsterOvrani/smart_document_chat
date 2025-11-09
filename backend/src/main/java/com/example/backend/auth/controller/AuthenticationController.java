@@ -1,9 +1,11 @@
 package com.example.backend.auth.controller;
 
+import com.example.backend.auth.dto.GoogleAuthRequest;
 import com.example.backend.auth.dto.LoginUserDto;
 import com.example.backend.auth.dto.RegisterUserDto;
 import com.example.backend.auth.dto.VerifyUserDto;
 import com.example.backend.auth.service.AuthenticationService;
+import com.example.backend.auth.service.GoogleOAuthService;
 import com.example.backend.auth.service.JwtService;
 import com.example.backend.user.model.User;
 import lombok.RequiredArgsConstructor;
@@ -11,9 +13,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
 
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.*;
 
 /**
  * Controller for authentication operations
@@ -25,10 +29,46 @@ import java.util.Map;
 @RequestMapping("/auth")
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 public class AuthenticationController {
     
     private final JwtService jwtService;
     private final AuthenticationService authenticationService;
+    private final GoogleOAuthService googleOAuthService;
+
+    @PostMapping("/google")
+    public ResponseEntity<Map<String, Object>> googleLogin(@RequestBody GoogleAuthRequest request) {
+        try {
+            log.info("Google login attempt");
+            
+            // אימות הטוקן ויצירת/מציאת משתמש
+            User user = googleOAuthService.authenticateGoogleUser(request.getCredential());
+            
+            // יצירת JWT token
+            String jwtToken = jwtService.generateToken(user);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("token", jwtToken);
+            response.put("expiresIn", jwtService.getExpirationTime());
+            response.put("user", Map.of(
+                "username", user.getUsername(),
+                "email", user.getEmail(),
+                "fullName", user.getFirstName() + " " + user.getLastName()
+            ));
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("Google login failed", e);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("error", "Google authentication failed");
+            
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+    }
 
     // ==================== Register ====================
     

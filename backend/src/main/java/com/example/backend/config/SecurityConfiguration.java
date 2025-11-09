@@ -36,11 +36,13 @@ public class SecurityConfiguration {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authorize -> authorize
-                        // ✅ נתיבים ציבוריים (ללא אימות)
+                        // ✅ Google OAuth endpoints
                         .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers("/login/oauth2/**").permitAll()
+                        .requestMatchers("/oauth2/**").permitAll()
                         .requestMatchers("/error").permitAll()
 
-                        // ✅ כל השאר דורש אימות (כולל /api/**)
+                        // ✅ כל השאר דורש אימות
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

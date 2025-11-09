@@ -1,11 +1,12 @@
-// src/components/Auth/Login.js
-import React, { useState } from 'react';
+// frontend/src/components/Auth/Login.js
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { authAPI } from '../../services/api';
+import GoogleLoginButton from './GoogleLoginButton';
 import './Login.css';
 
 const Login = () => {
-  const [email, setEmail] = useState('');  // ← שינוי מ-username
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -14,7 +15,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-React.useEffect(() => {
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const msg = params.get('msg');
     const verified = params.get('verified');
@@ -22,30 +23,27 @@ React.useEffect(() => {
     
     if (verified === 'true') {
       setSuccessMsg('✅ המייל אומת בהצלחה! כעת תוכל להתחבר למערכת');
-      // נקה את ה-URL
       window.history.replaceState({}, '', '/login');
     } else if (verified === 'false') {
       setError('❌ אימות המייל נכשל: ' + (errorParam || 'קוד לא תקין או פג תוקף'));
-      // נקה את ה-URL
       window.history.replaceState({}, '', '/login');
     } else if (msg) {
       setSuccessMsg(msg);
     }
   }, [location]);
 
+  // ==================== Regular Login ====================
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const response = await authAPI.login(email, password);  // ← שינוי
+      const response = await authAPI.login(email, password);
       
       if (response.data.success) {
-        // שמור את הטוקן ב-localStorage
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
-        
         navigate('/');
       } else {
         setError(response.data.error || 'שגיאה בהתחברות');
@@ -62,6 +60,40 @@ React.useEffect(() => {
     }
   };
 
+  // ==================== Google Login ====================
+  const handleGoogleLogin = async (credential) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      console.log('🔵 Google login attempt...');
+      const response = await authAPI.googleLogin(credential);
+      
+      if (response.data.success) {
+        console.log('✅ Google login successful');
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        navigate('/');
+      } else {
+        setError(response.data.error || 'שגיאה בהתחברות עם Google');
+      }
+    } catch (err) {
+      console.error('❌ Google login error:', err);
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else {
+        setError('שגיאה בהתחברות עם Google');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleError = (error) => {
+    console.error('Google login error:', error);
+    setError('שגיאה בהתחברות עם Google. אנא נסה שוב.');
+  };
+
   return (
     <div className="login-page">
       <div className="login-container">
@@ -76,6 +108,14 @@ React.useEffect(() => {
           <div className="alert alert-success">{successMsg}</div>
         )}
 
+        {/* ==================== Google Login Button ==================== */}
+        <GoogleLoginButton 
+          onSuccess={handleGoogleLogin}
+          onError={handleGoogleError}
+          disabled={loading}
+        />
+
+        {/* ==================== Regular Login Form ==================== */}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="email">אימייל:</label>

@@ -1,7 +1,8 @@
-// src/components/Auth/Register.js
+// frontend/src/components/Auth/Register.js
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authAPI } from '../../services/api';
+import GoogleLoginButton from './GoogleLoginButton';
 import './Register.css';
 
 const Register = () => {
@@ -25,7 +26,6 @@ const Register = () => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     
-    // Real-time validation
     if (name === 'username' && value.length >= 3) {
       validateUsername(value);
     }
@@ -148,11 +148,11 @@ const Register = () => {
     }));
   };
 
+  // ==================== Regular Registration ====================
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAlert({ message: '', type: '' });
 
-    // Validate all fields
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       setAlert({ message: 'נא למלא את כל השדות', type: 'error' });
       return;
@@ -163,7 +163,6 @@ const Register = () => {
       return;
     }
 
-    // בדוק שכל הvalidations עברו
     if (validations.username && !validations.username.valid) {
       setAlert({ message: 'שם המשתמש לא תקין או תפוס', type: 'error' });
       return;
@@ -194,7 +193,6 @@ const Register = () => {
         setAlert({ message: 'רישום בוצע בהצלחה! מעביר לדף אימות...', type: 'success' });
         
         setTimeout(() => {
-          // העבר לדף אימות עם המייל במצב המתנה
           navigate('/verify?email=' + encodeURIComponent(formData.email.trim()) + '&mode=wait');
         }, 1500);
       } else {
@@ -212,6 +210,41 @@ const Register = () => {
     }
   };
 
+  // ==================== Google Signup ====================
+  const handleGoogleSignup = async (credential) => {
+    setLoading(true);
+    setAlert({ message: '', type: '' });
+
+    try {
+      console.log('🔵 Google signup attempt...');
+      const response = await authAPI.googleLogin(credential);
+      
+      if (response.data.success) {
+        console.log('✅ Google signup successful');
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        setAlert({ message: 'נרשמת בהצלחה! מעביר לדף הבית...', type: 'success' });
+        setTimeout(() => navigate('/'), 1500);
+      } else {
+        setAlert({ message: response.data.error || 'שגיאה ברישום עם Google', type: 'error' });
+      }
+    } catch (err) {
+      console.error('❌ Google signup error:', err);
+      if (err.response?.data?.error) {
+        setAlert({ message: err.response.data.error, type: 'error' });
+      } else {
+        setAlert({ message: 'שגיאה ברישום עם Google', type: 'error' });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleError = (error) => {
+    console.error('Google signup error:', error);
+    setAlert({ message: 'שגיאה ברישום עם Google. אנא נסה שוב.', type: 'error' });
+  };
+
   return (
     <div className="register-page">
       <div className="register-container">
@@ -222,6 +255,14 @@ const Register = () => {
           <div className={`alert alert-${alert.type}`}>{alert.message}</div>
         )}
 
+        {/* ==================== Google Signup Button ==================== */}
+        <GoogleLoginButton 
+          onSuccess={handleGoogleSignup}
+          onError={handleGoogleError}
+          disabled={loading}
+        />
+
+        {/* ==================== Regular Registration Form ==================== */}
         <form onSubmit={handleSubmit}>
           <div className="form-row">
             <div className="form-group">

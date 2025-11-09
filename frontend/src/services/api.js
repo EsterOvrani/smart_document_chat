@@ -78,7 +78,8 @@ export const authAPI = {
     return api.post('/auth/logout');
   },
   checkUsername: (username) => api.get(`/auth/check-username/${encodeURIComponent(username)}`),
-  checkEmail: (email) => api.get(`/auth/check-email/${encodeURIComponent(email)}`)
+  checkEmail: (email) => api.get(`/auth/check-email/${encodeURIComponent(email)}`),
+  googleLogin: (credential) => api.post('/auth/google', { credential })
 };
 
 // ==================== Chat API ====================
