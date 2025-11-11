@@ -1,0 +1,94 @@
+# ==================== Environment Files ====================
+# Root level environment files
+.env
+.env.shared
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Keep example files
+!.env.shared.example
+!.env.example
+
+# ==================== Docker ====================
+docker-compose.override.yml
+.docker/
+
+# ==================== IDE / Editors ====================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# NetBeans
+nbproject/
+
+# ==================== OS Files ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ==================== Logs ====================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==================== Temporary Files ====================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# ==================== Secrets & Credentials ====================
+secrets/
+*.key
+*.pem
+*.p12
+*.jks
+*.pfx
+credentials.json
+service-account.json
+
+# ==================== Backup Files ====================
+*.bak
+*.backup
+*.old
+
+# ==================== Archives ====================
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# ==================== Documentation Build ====================
+/docs/_build/
+/docs/.docusaurus/
+/site/

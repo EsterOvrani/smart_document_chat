@@ -1,38 +1,97 @@
-HELP.md
+# ==================== Environment Files ====================
+# Backend environment files
+.env
+.env.backend
+.env.local
+.env.development
+.env.production
+
+# Keep example files
+!.env.backend.example
+!.env.example
+
+# ==================== Maven ====================
 target/
-.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-### STS ###
+# Maven wrapper
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.properties
+
+# ==================== Gradle ====================
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# ==================== Spring Boot ====================
+HELP.md
+.springBeans
+spring-boot-application.properties
+
+# ==================== IDE ====================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+
+# Eclipse
 .apt_generated
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
 .sts4-cache
+bin/
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
-### VS Code ###
+# VSCode
 .vscode/
+*.code-workspace
 
-.env
-*.env
-.env.local
-.env.production
+# ==================== Java ====================
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# ==================== Logs ====================
+*.log
+logs/
+spring.log
+
+# ==================== Application Specific ====================
+# Temporary upload directory
+uploads/
+temp/
+tmp/
+
+# ==================== Testing ====================
+.junit/
+*.hprof
+
+# ==================== Database ====================
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+
+# ==================== OS ====================
+.DS_Store
+Thumbs.db

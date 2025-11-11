@@ -6,34 +6,40 @@ services:
     image: postgres:15-alpine
     container_name: postgres-smart-doc-chat
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: smartdocumentchat
-      POSTGRES_USER: smartdoc_user
-      POSTGRES_PASSWORD: smartdoc_password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smartdoc_user -d smartdocumentchat"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - app-network
+    restart: unless-stopped
 
-  # ==================== Redis Cache ==================== ✨ NEW!
+  # ==================== Redis ====================
   redis:
     image: redis:7-alpine
     container_name: redis-smart-doc-chat
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    env_file:
+      - .env
+    command: >
+      redis-server 
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+      --appendonly yes 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    # Command explanation:
-    # --appendonly yes        → Persist data to disk
-    # --maxmemory 256mb       → Limit Redis to 256MB RAM
-    # --maxmemory-policy allkeys-lru → When full, evict least recently used keys
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -48,49 +54,40 @@ services:
     image: qdrant/qdrant:latest
     container_name: qdrant-smart-doc-chat
     ports:
-      - "6333:6333"      # REST API
-      - "6334:6334"      # gRPC API
+      - "${QDRANT_REST_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    env_file:
+      - .env
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
-    restart: unless-stopped
     networks:
       - app-network
+    restart: unless-stopped
 
-  # ==================== Backend (Spring Boot) ====================
+  # ==================== Backend ====================
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: backend-prod:latest
     container_name: spring-backend
-    env_file:
-      - ./backend/.env
-    environment:
-      # Database
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdocumentchat
-      SPRING_DATASOURCE_USERNAME: smartdoc_user
-      SPRING_DATASOURCE_PASSWORD: smartdoc_password
-      
-      # Qdrant
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6334
-    
-      # Redis ✨ NEW!
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      
-      # Frontend URL
-      FRONTEND_URL: http://localhost
-    
     ports:
-      - "8080:8080"
+      - "${SERVER_PORT:-8080}:8080"
+    env_file:
+      - .env              # 👈 קודם המשותף
+      - ./backend/.env   # 👈 אחר כך הספציפי
+    environment:
+      # Override - שמות קונטיינרים במקום localhost
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      QDRANT_HOST: qdrant
+      FRONTEND_URL: http://localhost:3000
     depends_on:
       postgres:
         condition: service_healthy
-      redis:                 # ✨ NEW dependency!
+      redis:
         condition: service_healthy
       qdrant:
         condition: service_started
@@ -98,29 +95,30 @@ services:
       - app-network
     restart: unless-stopped
 
-  # ==================== Frontend (React) ====================
+  # ==================== Frontend ====================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: frontend-prod:latest
     container_name: react-frontend
     ports:
       - "3000:3000"
+    env_file:
+      - ./frontend/.env
     depends_on:
       - backend
     networks:
       - app-network
     restart: unless-stopped
 
-  # ==================== Nginx (Reverse Proxy) ====================
+  # ==================== Nginx ====================
   nginx:
-    build:                                          
-      context: ./nginx                              
-      dockerfile: Dockerfile                        
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
     container_name: nginx-proxy
     ports:
-      - "80:80"
+      - "${NGINX_PORT:-80}:80"
     depends_on:
       - backend
       - frontend
@@ -128,16 +126,14 @@ services:
       - app-network
     restart: unless-stopped
 
-# ==================== Networks ====================
 networks:
   app-network:
     driver: bridge
 
-# ==================== Volumes ====================
 volumes:
   postgres_data:
     driver: local
-  redis_data:              # ✨ NEW volume for Redis persistence
+  redis_data:
     driver: local
   qdrant_storage:
     driver: local
