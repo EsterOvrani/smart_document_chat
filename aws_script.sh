@@ -131,7 +131,7 @@ services:
     environment:
       POSTGRES_DB: smartdocumentchat
       POSTGRES_USER: smartdoc_user
-      POSTGRES_PASSWORD: smartdoc_password
+      POSTGRES_PASSWORD: smartdoc_postgres_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -185,8 +185,8 @@ services:
       - ./backend/.env
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdocumentchat
-      SPRING_DATASOURCE_USERNAME: smartdoc_user
-      SPRING_DATASOURCE_PASSWORD: smartdoc_password
+      POSTGRES_USER: smartdoc_user
+      POSTGRES_PASSWORD: smartdoc_postgres_password
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6334
       REDIS_HOST: redis
@@ -256,15 +256,15 @@ echo "📄 Creating backend/.env file..."
 cat > backend/.env << 'EOF'
 # ==================== Database ====================
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/smartdocumentchat
-SPRING_DATASOURCE_USERNAME=smartdoc_user
-SPRING_DATASOURCE_PASSWORD=smartdoc_password
+POSTGRES_USER=smartdoc_user
+POSTGRES_PASSWORD=smartdoc_postgres_password
 
 # ==================== JWT ====================
 JWT_SECRET_KEY=ENTER YOUR JWT SECRET KEY HERE
 
 # ==================== Email ====================
-SUPPORT_EMAIL=ENTER YOUR SUPPORT EMAIL HERE
-APP_PASSWORD=ENTER YOUR EMAIL APP PASSWORD HERE
+MAIL_USERNAME=ENTER YOUR SUPPORT EMAIL HERE
+MAIL_PASSWORD=ENTER YOUR EMAIL APP PASSWORD HERE
 
 # ==================== Frontend ====================
 FRONTEND_URL=http://localhost:3000

@@ -58,23 +58,23 @@ pipeline {
                         string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
                         string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),
                         string(credentialsId: 'AWS_S3_BUCKET', variable: 'AWS_S3_BUCKET'),
-                        string(credentialsId: 'SUPPORT_EMAIL', variable: 'SUPPORT_EMAIL'),
-                        string(credentialsId: 'APP_PASSWORD', variable: 'APP_PASSWORD'),
+                        string(credentialsId: 'MAIL_USERNAME', variable: 'MAIL_USERNAME'),
+                        string(credentialsId: 'MAIL_PASSWORD', variable: 'MAIL_PASSWORD'),
                         string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')
                     ]) {
                         sh '''
                             cat > backend/.env << EOF
 # ==================== Database ====================
 SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
-SPRING_DATASOURCE_USERNAME=smartdoc_user
-SPRING_DATASOURCE_PASSWORD=smartdoc_password
+POSTGRES_USER=smartdoc_user
+POSTGRES_PASSWORD=smartdoc_postgres_password
 
 # ==================== JWT ====================
 JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
 # ==================== Email ====================
-SUPPORT_EMAIL=${SUPPORT_EMAIL}
-APP_PASSWORD=${APP_PASSWORD}
+MAIL_USERNAME=${MAIL_USERNAME}
+MAIL_PASSWORD=${MAIL_PASSWORD}
 
 # ==================== Frontend ====================
 FRONTEND_URL=http://localhost
@@ -191,8 +191,8 @@ EOF
                         string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
                         string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY'),
                         string(credentialsId: 'AWS_S3_BUCKET', variable: 'AWS_S3_BUCKET'),
-                        string(credentialsId: 'SUPPORT_EMAIL', variable: 'SUPPORT_EMAIL'),
-                        string(credentialsId: 'APP_PASSWORD', variable: 'APP_PASSWORD'),
+                        string(credentialsId: 'MAIL_USERNAME', variable: 'MAIL_USERNAME'),
+                        string(credentialsId: 'MAIL_PASSWORD', variable: 'MAIL_PASSWORD'),
                         string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')
                     ]) {
                         sh '''
@@ -203,15 +203,15 @@ EOF
                             cat > backend/.env << EOF
 # ==================== Database ====================
 SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
-SPRING_DATASOURCE_USERNAME=smartdoc_user
-SPRING_DATASOURCE_PASSWORD=smartdoc_password
+POSTGRES_USER=smartdoc_user
+POSTGRES_PASSWORD=smartdoc_postgres_password
 
 # ==================== JWT ====================
 JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
 # ==================== Email ====================
-SUPPORT_EMAIL=${SUPPORT_EMAIL}
-APP_PASSWORD=${APP_PASSWORD}
+MAIL_USERNAME=${MAIL_USERNAME}
+MAIL_PASSWORD=${MAIL_PASSWORD}
 
 # ==================== Frontend ====================
 FRONTEND_URL=http://localhost

@@ -75,9 +75,8 @@ services:
     container_name: spring-backend
     ports:
       - "${SERVER_PORT:-8080}:8080"
-    env_file:
-      - .env              # 👈 קודם המשותף
-      - ./backend/.env   # 👈 אחר כך הספציפי
+    env_file:            
+      - .env   # 👈 אחר כך הספציפי
     environment:
       # Override - שמות קונטיינרים במקום localhost
       POSTGRES_HOST: postgres
@@ -100,11 +99,15 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        REACT_APP_GOOGLE_CLIENT_ID: ${REACT_APP_GOOGLE_CLIENT_ID}
+        REACT_APP_API_URL: http://localhost:8080
     container_name: react-frontend
     ports:
       - "3000:3000"
+
     env_file:
-      - ./frontend/.env
+      - .env
     depends_on:
       - backend
     networks:
