@@ -5,6 +5,7 @@ import { authAPI, chatAPI } from '../../services/api';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
 import NewSessionModal from './NewSessionModal';
+import DocumentsModal from './DocumentsModal';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -17,7 +18,8 @@ const Dashboard = () => {
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [loading, setLoading] = useState(false);
-  
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
+
   const navigate = useNavigate();
 
   // ==================== Effects ====================
@@ -332,7 +334,7 @@ const Dashboard = () => {
           currentSession={currentSession}
           messages={messages}
           onSendMessage={sendMessage}
-          onShowDocuments={() => {}}
+          onShowDocuments={() => setShowDocumentsModal(true)}
           currentUser={currentUser}
         />
       </div>
@@ -370,6 +372,13 @@ const Dashboard = () => {
           <div className="spinner"></div>
           <p style={{ marginTop: '15px', textAlign: 'center' }}>טוען...</p>
         </div>
+      )}
+
+      {showDocumentsModal && currentSession && (
+        <DocumentsModal
+          chatId={currentSession.id}
+          onClose={() => setShowDocumentsModal(false)}
+        />
       )}
     </div>
   );
