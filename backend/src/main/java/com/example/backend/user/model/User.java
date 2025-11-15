@@ -41,6 +41,9 @@ public class User implements UserDetails {
     @Column(name = "verification_expiration")
     private LocalDateTime verificationCodeExpiresAt;
 
+    @Column(name = "profile_picture_url")
+    private String profilePictureUrl;
+
     private boolean enabled;
 
     // Default constructor

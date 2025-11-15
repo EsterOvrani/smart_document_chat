@@ -54,7 +54,8 @@ public class AuthenticationController {
             response.put("user", Map.of(
                 "username", user.getUsername(),
                 "email", user.getEmail(),
-                "fullName", user.getFirstName() + " " + user.getLastName()
+                "fullName", user.getFirstName() + " " + user.getLastName(),
+                "profilePictureUrl", user.getProfilePictureUrl() != null ? user.getProfilePictureUrl() : ""
             ));
             
             return ResponseEntity.ok(response);
@@ -102,7 +103,8 @@ public class AuthenticationController {
         response.put("user", Map.of(
             "username", authenticatedUser.getUsername(),
             "email", authenticatedUser.getEmail(),
-            "fullName", authenticatedUser.getFirstName() + " " + authenticatedUser.getLastName()
+            "fullName", authenticatedUser.getFirstName() + " " + authenticatedUser.getLastName(),
+            "profilePictureUrl", authenticatedUser.getProfilePictureUrl() != null ? authenticatedUser.getProfilePictureUrl() : ""
         ));
         
         return ResponseEntity.ok(response);
@@ -204,6 +206,7 @@ public class AuthenticationController {
             userInfo.put("username", user.getUsername());
             userInfo.put("email", user.getEmail());
             userInfo.put("fullName", user.getFirstName() + " " + user.getLastName());
+            userInfo.put("profilePictureUrl", user.getProfilePictureUrl() != null ? user.getProfilePictureUrl() : "");
             response.put("user", userInfo);
         } else {
             response.put("success", true);

@@ -1,4 +1,4 @@
-// src/components/Dashboard/MessageList.js
+// frontend/src/components/Dashboard/MessageList.js
 import React, { useEffect, useRef } from 'react';
 
 const MessageList = ({ currentSession, messages, loading, currentUser }) => {
@@ -67,9 +67,6 @@ const MessageList = ({ currentSession, messages, loading, currentUser }) => {
 
 const Message = ({ message, currentUser }) => {
   const isUser = message.role === 'user';
-  const avatar = isUser 
-    ? (currentUser?.fullName?.[0] || 'U')
-    : 'AI';
 
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString('he-IL', {
@@ -78,23 +75,18 @@ const Message = ({ message, currentUser }) => {
     });
   };
 
-  // ✅ פונקציה לזיהוי כיוון הטקסט - עברית או אנגלית
   const detectTextDirection = (text) => {
     if (!text) return 'rtl';
     
-    // הסר רווחים וקבל את התו הראשון
     const trimmedText = text.trim();
     if (!trimmedText) return 'rtl';
     
-    // טווח תווים עבריים: U+0590 to U+05FF
     const hebrewRegex = /[\u0590-\u05FF]/;
     
-    // אם יש תווים עבריים בטקסט - כיוון מימין לשמאל
     if (hebrewRegex.test(text)) {
       return 'rtl';
     }
     
-    // אחרת (אנגלית או שפות אחרות) - כיוון משמאל לימין
     return 'ltr';
   };
 
@@ -102,7 +94,21 @@ const Message = ({ message, currentUser }) => {
 
   return (
     <div className={`message ${message.role}`}>
-      <div className="message-avatar">{avatar}</div>
+      <div className="message-avatar">
+        {isUser && currentUser?.profilePictureUrl ? (
+          <img 
+            src={currentUser.profilePictureUrl} 
+            alt="Profile"
+            onError={(e) => {
+              console.error('Image failed to load:', currentUser.profilePictureUrl);
+              e.target.style.display = 'none';
+              e.target.parentElement.innerHTML = `<span>${currentUser?.fullName?.[0] || 'U'}</span>`;
+            }}
+          />
+        ) : (
+          <span>{isUser ? (currentUser?.fullName?.[0] || 'U') : 'AI'}</span>
+        )}
+      </div>
       <div className="message-content">
         <div 
           className="message-bubble"

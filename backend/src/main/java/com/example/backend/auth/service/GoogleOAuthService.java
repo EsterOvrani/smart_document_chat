@@ -32,7 +32,6 @@ public class GoogleOAuthService {
      */
     public User authenticateGoogleUser(String idTokenString) {
         try {
-            // אימות הטוקן מול Google
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
                     new NetHttpTransport(), 
                     new GsonFactory())
@@ -47,7 +46,6 @@ public class GoogleOAuthService {
 
             GoogleIdToken.Payload payload = idToken.getPayload();
             
-            // פרטי המשתמש מ-Google
             String email = payload.getEmail();
             String googleId = payload.getSubject();
             String firstName = (String) payload.get("given_name");
@@ -57,15 +55,23 @@ public class GoogleOAuthService {
 
             log.info("Google user authenticated: {}", email);
 
-            // בדוק אם המשתמש כבר קיים
             Optional<User> existingUser = userRepository.findByEmail(email);
             
             if (existingUser.isPresent()) {
-                // משתמש קיים - החזר אותו
-                return existingUser.get();
+                User user = existingUser.get();
+                // עדכן תמונת פרופיל אם השתנתה
+                if (pictureUrl != null && !pictureUrl.equals(user.getProfilePictureUrl())) {
+                    user.setProfilePictureUrl(pictureUrl);
+                    user = userRepository.save(user);
+                }
+                return user;
             } else {
-                // משתמש חדש - צור אותו
-                return createGoogleUser(email, googleId, firstName, lastName, emailVerified);
+                User newUser = createGoogleUser(email, googleId, firstName, lastName, emailVerified);
+                if (pictureUrl != null) {
+                    newUser.setProfilePictureUrl(pictureUrl);
+                    newUser = userRepository.save(newUser);
+                }
+                return newUser;
             }
             
         } catch (Exception e) {
@@ -78,14 +84,13 @@ public class GoogleOAuthService {
      * יצירת משתמש חדש מחשבון Google
      */
     private User createGoogleUser(String email, String googleId, 
-                                  String firstName, String lastName, 
-                                  boolean emailVerified) {
+                                String firstName, String lastName, 
+                                boolean emailVerified) {
         User user = new User();
         user.setEmail(email);
         user.setFirstName(firstName != null ? firstName : "User");
         user.setLastName(lastName != null ? lastName : "");
         
-        // יצירת username ייחודי
         String baseUsername = email.split("@")[0];
         String username = baseUsername;
         int counter = 1;
@@ -95,10 +100,7 @@ public class GoogleOAuthService {
         }
         user.setUsername(username);
         
-        // סיסמה רנדומלית (לא בשימוש אבל נדרש על ידי המערכת)
         user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
-        
-        // Google מאמת את המייל - אין צורך בקוד אימות
         user.setEnabled(emailVerified);
         
         user = userRepository.save(user);
