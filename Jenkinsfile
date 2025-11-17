@@ -2,8 +2,6 @@ pipeline {
     agent any
     
     environment {
-        // הוספה חדשה - תקן את בעיית ה-API version
-        DOCKER_API_VERSION = '1.41'
 
         // Docker Registry
         DOCKER_REGISTRY = 'esterovrani'
@@ -285,7 +283,7 @@ POSTGRES_PASSWORD=smartdoc_postgres_password
 # ==================== Redis Configuration ====================
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_PASSWORD=
+REDIS_PASSWORD=smartdoc_redis_password
 
 # ==================== Qdrant Configuration ====================
 QDRANT_HOST=qdrant
