@@ -121,17 +121,20 @@ EOF
 echo "📄 Creating docker-compose.yml..."
 cat > docker-compose.yml << 'EOF'
 version: '3.8'
+
 services:
   # ==================== PostgreSQL ====================
   postgres:
     image: postgres:15-alpine
     container_name: postgres-smart-doc-chat
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: smartdocumentchat
-      POSTGRES_USER: smartdoc_user
-      POSTGRES_PASSWORD: smartdoc_postgres_password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -143,15 +146,22 @@ services:
       - app-network
     restart: unless-stopped
 
-  # ==================== Redis Cache ====================
+  # ==================== Redis ====================
   redis:
     image: redis:7-alpine
     container_name: redis-smart-doc-chat
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    env_file:
+      - .env
+    command: >
+      redis-server 
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+      --appendonly yes 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -166,8 +176,10 @@ services:
     image: qdrant/qdrant:latest
     container_name: qdrant-smart-doc-chat
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${QDRANT_REST_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    env_file:
+      - .env
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
@@ -177,23 +189,20 @@ services:
       - app-network
     restart: unless-stopped
 
-  # ==================== Backend (מ-Docker Hub) ====================
+  # ==================== Backend ====================
   backend:
     image: esterovrani/smart-doc-chat-backend:latest
     container_name: spring-backend
-    env_file:
-      - ./backend/.env
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/smartdocumentchat
-      POSTGRES_USER: smartdoc_user
-      POSTGRES_PASSWORD: smartdoc_postgres_password
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6334
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      FRONTEND_URL: http://localhost
     ports:
-      - "8080:8080"
+      - "${SERVER_PORT:-8080}:8080"
+    env_file:            
+      - .env 
+    environment:
+      # Override - שמות קונטיינרים במקום localhost
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      QDRANT_HOST: qdrant
+      FRONTEND_URL: http://localhost:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -205,26 +214,28 @@ services:
       - app-network
     restart: unless-stopped
 
-  # ==================== Frontend (מ-Docker Hub) ====================
+  # ==================== Frontend ====================
   frontend:
     image: esterovrani/smart-doc-chat-frontend:latest
     container_name: react-frontend
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     depends_on:
       - backend
     networks:
       - app-network
     restart: unless-stopped
 
-  # ==================== Nginx (Reverse Proxy) ====================
+  # ==================== Nginx ====================
   nginx:
     build:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: nginx-proxy
     ports:
-      - "80:80"
+      - "${NGINX_PORT:-80}:80"
     depends_on:
       - backend
       - frontend
@@ -247,39 +258,76 @@ volumes:
     driver: local
 EOF
 
-# ==================== יצירת תקיית backend ל-.env ====================
-echo "📂 Creating backend directory..."
-mkdir -p backend
 
-# ==================== יצירת קובץ .env לבקאנד ====================
-echo "📄 Creating backend/.env file..."
-cat > backend/.env << 'EOF'
-# ==================== Database ====================
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/smartdocumentchat
+# ==================== יצירת קובץ .env לבאנד ====================
+echo "📄 Creating .env file..."
+cat > .env << 'EOF'
+# ==================== Shared Infrastructure ====================
+
+# ==================== Database Configuration ====================
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=smartdocumentchat
 POSTGRES_USER=smartdoc_user
-POSTGRES_PASSWORD=smartdoc_postgres_password
+POSTGRES_PASSWORD=ENTER_PASSWORD
 
-# ==================== JWT ====================
-JWT_SECRET_KEY=ENTER YOUR JWT SECRET KEY HERE
+# ==================== Redis Configuration ====================
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=ENTER_PASSWORD
 
-# ==================== Email ====================
-MAIL_USERNAME=ENTER YOUR SUPPORT EMAIL HERE
-MAIL_PASSWORD=ENTER YOUR EMAIL APP PASSWORD HERE
+# ==================== Qdrant Configuration ====================
+QDRANT_HOST=localhost
+QDRANT_REST_PORT=6333
+QDRANT_GRPC_PORT=6334
 
-# ==================== Frontend ====================
-FRONTEND_URL=http://localhost:3000
+# ==================== Ports ====================
+NGINX_PORT=80
+
+
+# ==================== Backend-Specific Configuration ====================
+
+# ==================== Server ====================
+SERVER_PORT=8080
+
+# ==================== Security - JWT ====================
+JWT_SECRET_KEY=your-super-secret-jwt-key-min-256-bits-CHANGE-THIS-IN-PRODUCTION
+JWT_EXPIRATION_MS=3600000
+
+# ==================== Email Configuration ====================
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-specific-password
 
 # ==================== OpenAI ====================
-OPENAI_API_KEY=ENTER YOUR OPENAI API KEY HERE
+OPENAI_API_KEY=sk-your-openai-api-key-here
 
-# ==================== Qdrant ====================
-QDRANT_HOST=localhost
-QDRANT_PORT=6334
-# ==================== AWS S3 ====================
-AWS_ACCESS_KEY_ID=ENTER YOUR AWS ACCESS KEY ID HERE
-AWS_SECRET_ACCESS_KEY=ENTER YOUR AWS SECRET ACCESS KEY HERE
+# ==================== AWS S3 / MinIO ====================
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
 AWS_REGION=eu-west-1
 AWS_S3_BUCKET=smart-document-chat
+
+# ==================== Google OAuth2 ====================
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# ==================== Frontend URL ====================
+FRONTEND_URL=http://localhost:3000
+
+
+# ==================== Qdrant Embeddings ====================
+QDRANT_DIMENSION=3072
+QDRANT_DISTANCE=Cosine
+QDRANT_DEFAULT_MAX_RESULTS=5
+QDRANT_DEFAULT_MIN_SCORE=0.75
+QDRANT_HNSW_M=16
+QDRANT_HNSW_EF_CONSTRUCT=200
+QDRANT_HNSW_EF=128
+
+# ==================== Frontend-Specific Configuration ====================
+REACT_APP_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 EOF
 
 # ==================== שינוי הרשאות ====================
