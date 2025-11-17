@@ -2,6 +2,9 @@ pipeline {
     agent any
     
     environment {
+        // הוספה חדשה - תקן את בעיית ה-API version
+        DOCKER_API_VERSION = '1.41'
+
         // Docker Registry
         DOCKER_REGISTRY = 'esterovrani'
         
