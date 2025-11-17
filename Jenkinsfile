@@ -4,13 +4,45 @@ pipeline {
     environment {
         // Docker Registry
         DOCKER_REGISTRY = 'esterovrani'
-        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        
+        // Git commit message (מנוקה מתווים מיוחדים)
+        GIT_COMMIT_MESSAGE = sh(
+            script: "git log -1 --pretty=format:'%s' | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-\$//' | cut -c1-50",
+            returnStdout: true
+        ).trim()
+        
+        // Git commit hash קצר (לשילוב)
+        GIT_COMMIT_SHORT = sh(
+            script: "git rev-parse --short=7 HEAD",
+            returnStdout: true
+        ).trim()
+        
+        // Tag format: commit-message-hash (לייחודיות)
+        IMAGE_TAG = "${GIT_COMMIT_MESSAGE}-${GIT_COMMIT_SHORT}"
         
         // Temporary build directory
         BUILD_DIR = "${WORKSPACE}/build"
     }
     
     stages {
+        stage('📋 Display Build Info') {
+            steps {
+                script {
+                    echo '📋 ====== BUILD INFORMATION ======'
+                    sh '''
+                        echo "Git Commit Message: $(git log -1 --pretty=format:'%s')"
+                        echo "Git Commit Hash:    ${GIT_COMMIT_SHORT}"
+                        echo "Sanitized Message:  ${GIT_COMMIT_MESSAGE}"
+                        echo "Image Tag:          ${IMAGE_TAG}"
+                        echo "Git Branch:         $(git rev-parse --abbrev-ref HEAD)"
+                        echo "Git Author:         $(git log -1 --pretty=format:'%an')"
+                        echo "Docker Registry:    ${DOCKER_REGISTRY}"
+                        echo "=================================="
+                    '''
+                }
+            }
+        }
+        
         stage('🧹 Cleanup Old Containers') {
             steps {
                 script {
@@ -30,7 +62,7 @@ pipeline {
                         docker ps -aq | grep -v ${JENKINS_CONTAINER_ID} | xargs -r docker rm -f 2>/dev/null || true
                         
                         # נקה images ישנים (לא של Jenkins!)
-                        docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep -v jenkins | awk '{print $2}' | xargs -r docker rmi -f 2>/dev/null || true
+                        docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep -v "jenkins-jenkins" | awk '{print $2}' | xargs -r docker rmi -f 2>/dev/null || true
                         
                         # נקה volumes
                         docker volume prune -f || true
@@ -51,7 +83,7 @@ pipeline {
         stage('🔐 Create TEST .env') {
             steps {
                 script {
-                    echo '🔐 Creating TEST .env file with TEST_MODE enabled...'
+                    echo '🔐 Creating GLOBAL TEST .env file with TEST_MODE enabled...'
                     
                     withCredentials([
                         string(credentialsId: 'OPENAI_API_KEY', variable: 'OPENAI_API_KEY'),
@@ -60,31 +92,51 @@ pipeline {
                         string(credentialsId: 'AWS_S3_BUCKET', variable: 'AWS_S3_BUCKET'),
                         string(credentialsId: 'MAIL_USERNAME', variable: 'MAIL_USERNAME'),
                         string(credentialsId: 'MAIL_PASSWORD', variable: 'MAIL_PASSWORD'),
-                        string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')
+                        string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY'),
+                        string(credentialsId: 'GOOGLE_CLIENT_ID', variable: 'GOOGLE_CLIENT_ID'),
+                        string(credentialsId: 'GOOGLE_CLIENT_SECRET', variable: 'GOOGLE_CLIENT_SECRET')
                     ]) {
                         sh '''
-                            cat > backend/.env << EOF
-# ==================== Database ====================
-SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
+                            # יצירת .env גלובלי בתיקייה הראשית
+                            cat > .env << EOF
+# ==================== Shared Infrastructure ====================
+# ==================== Database Configuration ====================
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_DB=smartdocumentchat
 POSTGRES_USER=smartdoc_user
 POSTGRES_PASSWORD=smartdoc_postgres_password
 
-# ==================== JWT ====================
-JWT_SECRET_KEY=${JWT_SECRET_KEY}
+# ==================== Redis Configuration ====================
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
-# ==================== Email ====================
+# ==================== Qdrant Configuration ====================
+QDRANT_HOST=qdrant
+QDRANT_REST_PORT=6333
+QDRANT_GRPC_PORT=6334
+QDRANT_API_KEY=
+
+# ==================== Ports ====================
+NGINX_PORT=80
+
+# ==================== Backend-Specific Configuration ====================
+# ==================== Server ====================
+SERVER_PORT=8080
+
+# ==================== Security - JWT ====================
+JWT_SECRET_KEY=${JWT_SECRET_KEY}
+JWT_EXPIRATION_MS=3600000
+
+# ==================== Email Configuration ====================
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
 MAIL_USERNAME=${MAIL_USERNAME}
 MAIL_PASSWORD=${MAIL_PASSWORD}
 
-# ==================== Frontend ====================
-FRONTEND_URL=http://localhost
-
 # ==================== OpenAI ====================
 OPENAI_API_KEY=${OPENAI_API_KEY}
-
-# ==================== Qdrant ====================
-QDRANT_HOST=qdrant
-QDRANT_PORT=6334
 
 # ==================== AWS S3 ====================
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -92,15 +144,31 @@ AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 AWS_REGION=eu-north-1
 AWS_S3_BUCKET=${AWS_S3_BUCKET}
 
-# ==================== Redis ====================
-REDIS_HOST=redis
-REDIS_PORT=6379
+# ==================== Google OAuth2 ====================
+GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+
+# ==================== Frontend URL ====================
+FRONTEND_URL=http://localhost
 
 # ==================== Test Mode (FOR TESTING ONLY!) ====================
 TEST_MODE_ENABLED=true
 BYPASS_EMAIL_VERIFICATION=true
+FIXED_VERIFICATION_CODE=999999
+
+# ==================== Qdrant Embeddings ====================
+QDRANT_DIMENSION=3072
+QDRANT_DISTANCE=Cosine
+QDRANT_DEFAULT_MAX_RESULTS=5
+QDRANT_DEFAULT_MIN_SCORE=0.75
+QDRANT_HNSW_M=16
+QDRANT_HNSW_EF_CONSTRUCT=200
+QDRANT_HNSW_EF=128
+
+# ==================== Frontend-Specific Configuration ====================
+REACT_APP_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 EOF
-                            echo "✅ TEST .env created with TEST_MODE=true"
+                            echo "✅ GLOBAL TEST .env created in project root with TEST_MODE=true"
                         '''
                     }
                 }
@@ -172,7 +240,7 @@ EOF
                 script {
                     echo '🗑️ Stopping and removing TEST containers...'
                     sh '''
-                        # עצור והסר את כל containers של הטסט
+                        # עצור והסר את כל containers של הטסט כולל volumes
                         docker-compose -f docker-compose.test.yml down -v
                         
                         echo "✅ TEST environment cleaned up"
@@ -184,7 +252,7 @@ EOF
         stage('🔐 Create PRODUCTION .env') {
             steps {
                 script {
-                    echo '🔐 Creating PRODUCTION .env file WITHOUT TEST_MODE...'
+                    echo '🔐 Creating GLOBAL PRODUCTION .env file WITHOUT TEST_MODE...'
                     
                     withCredentials([
                         string(credentialsId: 'OPENAI_API_KEY', variable: 'OPENAI_API_KEY'),
@@ -193,35 +261,54 @@ EOF
                         string(credentialsId: 'AWS_S3_BUCKET', variable: 'AWS_S3_BUCKET'),
                         string(credentialsId: 'MAIL_USERNAME', variable: 'MAIL_USERNAME'),
                         string(credentialsId: 'MAIL_PASSWORD', variable: 'MAIL_PASSWORD'),
-                        string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')
+                        string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY'),
+                        string(credentialsId: 'GOOGLE_CLIENT_ID', variable: 'GOOGLE_CLIENT_ID'),
+                        string(credentialsId: 'GOOGLE_CLIENT_SECRET', variable: 'GOOGLE_CLIENT_SECRET')
                     ]) {
                         sh '''
                             # מחק את .env הישן
-                            rm -f backend/.env
+                            rm -f .env
                             
-                            # צור PRODUCTION .env ללא TEST_MODE
-                            cat > backend/.env << EOF
-# ==================== Database ====================
-SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smartdocumentchat
+                            # צור PRODUCTION .env גלובלי ללא TEST_MODE
+                            cat > .env << EOF
+# ==================== Shared Infrastructure ====================
+# ==================== Database Configuration ====================
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_DB=smartdocumentchat
 POSTGRES_USER=smartdoc_user
 POSTGRES_PASSWORD=smartdoc_postgres_password
 
-# ==================== JWT ====================
-JWT_SECRET_KEY=${JWT_SECRET_KEY}
+# ==================== Redis Configuration ====================
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
-# ==================== Email ====================
+# ==================== Qdrant Configuration ====================
+QDRANT_HOST=qdrant
+QDRANT_REST_PORT=6333
+QDRANT_GRPC_PORT=6334
+QDRANT_API_KEY=
+
+# ==================== Ports ====================
+NGINX_PORT=80
+
+# ==================== Backend-Specific Configuration ====================
+# ==================== Server ====================
+SERVER_PORT=8080
+
+# ==================== Security - JWT ====================
+JWT_SECRET_KEY=${JWT_SECRET_KEY}
+JWT_EXPIRATION_MS=3600000
+
+# ==================== Email Configuration ====================
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
 MAIL_USERNAME=${MAIL_USERNAME}
 MAIL_PASSWORD=${MAIL_PASSWORD}
 
-# ==================== Frontend ====================
-FRONTEND_URL=http://localhost
-
 # ==================== OpenAI ====================
 OPENAI_API_KEY=${OPENAI_API_KEY}
-
-# ==================== Qdrant ====================
-QDRANT_HOST=qdrant
-QDRANT_PORT=6334
 
 # ==================== AWS S3 ====================
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -229,20 +316,34 @@ AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 AWS_REGION=eu-north-1
 AWS_S3_BUCKET=${AWS_S3_BUCKET}
 
-# ==================== Redis ====================
-REDIS_HOST=redis
-REDIS_PORT=6379
+# ==================== Google OAuth2 ====================
+GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 
+# ==================== Frontend URL ====================
+FRONTEND_URL=http://localhost
+
+# ==================== Qdrant Embeddings ====================
+QDRANT_DIMENSION=3072
+QDRANT_DISTANCE=Cosine
+QDRANT_DEFAULT_MAX_RESULTS=5
+QDRANT_DEFAULT_MIN_SCORE=0.75
+QDRANT_HNSW_M=16
+QDRANT_HNSW_EF_CONSTRUCT=200
+QDRANT_HNSW_EF=128
+
+# ==================== Frontend-Specific Configuration ====================
+REACT_APP_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 EOF
                             
-                            echo "✅ PRODUCTION .env created WITHOUT TEST_MODE"
+                            echo "✅ GLOBAL PRODUCTION .env created in project root WITHOUT TEST_MODE"
                             
-                            # וודא שTEST_MODE לא קיים
-                            if grep -q "TEST_MODE" backend/.env; then
-                                echo "❌ ERROR: TEST_MODE found in production .env!"
+                            # וודא שTEST_MODE מוגדר כ-false
+                            if grep -q "TEST_MODE_ENABLED=true" .env; then
+                                echo "❌ ERROR: TEST_MODE_ENABLED=true found in production .env!"
                                 exit 1
                             else
-                                echo "✅ Confirmed: No TEST_MODE in production .env"
+                                echo "✅ Confirmed: TEST_MODE_ENABLED=false in production .env"
                             fi
                         '''
                     }
@@ -268,16 +369,16 @@ EOF
         stage('🔍 Verify Production Images') {
             steps {
                 script {
-                    echo '🔍 Verifying production images do NOT contain TEST_MODE...'
+                    echo '🔍 Verifying production images do NOT contain TEST_MODE=true...'
                     sh '''
-                        # בדוק שbackend-prod image לא מכיל TEST_MODE
+                        # בדוק שbackend-prod image לא מכיל TEST_MODE=true
                         docker run --rm --entrypoint env backend-prod:latest > /tmp/backend-env.txt || true
                         
-                        if grep -q "TEST_MODE=true" /tmp/backend-env.txt; then
-                            echo "❌ CRITICAL ERROR: TEST_MODE found in production image!"
+                        if grep -q "TEST_MODE_ENABLED=true" /tmp/backend-env.txt; then
+                            echo "❌ CRITICAL ERROR: TEST_MODE_ENABLED=true found in production image!"
                             exit 1
                         else
-                            echo "✅ Confirmed: Production image is clean (no TEST_MODE)"
+                            echo "✅ Confirmed: Production image is clean (TEST_MODE_ENABLED=false)"
                         fi
                         
                         rm -f /tmp/backend-env.txt
@@ -289,19 +390,23 @@ EOF
         stage('📦 Tag Production Images') {
             steps {
                 script {
-                    echo '📦 Tagging production images...'
+                    echo '📦 Tagging production images with Git commit message...'
                     sh '''
-                        # Tag backend with project prefix
+                        echo "Original commit message: $(git log -1 --pretty=format:'%s')"
+                        echo "Sanitized tag: ${IMAGE_TAG}"
+                        
+                        # Tag backend with commit message and latest
                         docker tag backend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}
                         docker tag backend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-backend:latest
                         
-                        # Tag frontend with project prefix
+                        # Tag frontend with commit message and latest
                         docker tag frontend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}
                         docker tag frontend-prod:latest ${DOCKER_REGISTRY}/smart-doc-chat-frontend:latest
                         
                         echo "✅ Images tagged for production deployment"
                         echo "   Backend:  ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}"
                         echo "   Frontend: ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}"
+                        echo "   (Also tagged as 'latest')"
                     '''
                 }
             }
@@ -319,21 +424,25 @@ EOF
                         sh '''
                             echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
                             
-                            # Push backend with version tag and latest
-                            echo "📤 Pushing backend-prod:${IMAGE_TAG}..."
+                            # Push backend with commit message tag and latest
+                            echo "📤 Pushing backend with tag: ${IMAGE_TAG}..."
                             docker push ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}
                             docker push ${DOCKER_REGISTRY}/smart-doc-chat-backend:latest
                             
-                            # Push frontend with version tag and latest
-                            echo "📤 Pushing frontend-prod:${IMAGE_TAG}..."
+                            # Push frontend with commit message tag and latest
+                            echo "📤 Pushing frontend with tag: ${IMAGE_TAG}..."
                             docker push ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}
                             docker push ${DOCKER_REGISTRY}/smart-doc-chat-frontend:latest
                             
                             docker logout
                             
                             echo "✅ Production images deployed successfully!"
-                            echo "   Backend: ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}"
+                            echo ""
+                            echo "📦 DEPLOYED IMAGES:"
+                            echo "   Backend:  ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}"
+                            echo "   Backend:  ${DOCKER_REGISTRY}/smart-doc-chat-backend:latest"
                             echo "   Frontend: ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}"
+                            echo "   Frontend: ${DOCKER_REGISTRY}/smart-doc-chat-frontend:latest"
                         '''
                     }
                 }
@@ -351,8 +460,25 @@ EOF
         }
         
         success {
-            echo '✅ Pipeline completed successfully!'
-            echo '📦 Production images are ready for deployment'
+            script {
+                echo '✅ ====== PIPELINE SUCCESS ======'
+                sh '''
+                    echo "📦 Production images deployed!"
+                    echo ""
+                    echo "📝 Git Commit Info:"
+                    echo "   Message: $(git log -1 --pretty=format:'%s')"
+                    echo "   Author:  $(git log -1 --pretty=format:'%an')"
+                    echo "   Hash:    ${GIT_COMMIT_SHORT}"
+                    echo ""
+                    echo "🎯 Image Tag: ${IMAGE_TAG}"
+                    echo ""
+                    echo "🐳 Deployed Images:"
+                    echo "   ${DOCKER_REGISTRY}/smart-doc-chat-backend:${IMAGE_TAG}"
+                    echo "   ${DOCKER_REGISTRY}/smart-doc-chat-frontend:${IMAGE_TAG}"
+                    echo ""
+                    echo "✅ Pipeline completed successfully!"
+                '''
+            }
         }
         
         failure {
@@ -367,19 +493,46 @@ EOF
         }
         
         cleanup {
-            echo '🧹 Final cleanup...'
+            echo '🧹 ====== FINAL DEEP CLEANUP ======'
             sh '''
-                # וודא שכל הtest containers נעצרו
+                echo "🛑 Step 1: Stopping all Docker Compose services with volumes..."
                 docker-compose -f docker-compose.test.yml down -v 2>/dev/null || true
                 docker-compose down -v 2>/dev/null || true
                 
-                # נקה .env
-                rm -f backend/.env || true
+                echo "🗑️ Step 2: Removing all project images (preserving jenkins-jenkins)..."
+                # מחק את כל ה-images של הפרויקט (לא jenkins-jenkins!)
+                docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "jenkins-jenkins" | grep -E "backend|frontend|postgres|redis|qdrant|nginx|newman" | xargs -r docker rmi -f 2>/dev/null || true
                 
-                # נקה system
-                docker system prune -f || true
+                # מחק dangling images (לא jenkins-jenkins!)
+                docker images -f "dangling=true" -q | xargs -r docker rmi -f 2>/dev/null || true
                 
-                echo "✅ Final cleanup completed"
+                echo "🧹 Step 3: Cleaning Docker builder cache..."
+                docker builder prune -a -f
+                
+                echo "🗑️ Step 4: Removing unused volumes..."
+                docker volume prune -f
+                
+                echo "🗑️ Step 5: Removing unused networks..."
+                docker network prune -f
+                
+                echo "🧹 Step 6: Final system cleanup..."
+                docker system prune -f
+                
+                echo "🗂️ Step 7: Removing .env file..."
+                rm -f .env || true
+                
+                echo ""
+                echo "📊 ====== CLEANUP SUMMARY ======"
+                echo "Remaining containers:"
+                docker ps -a
+                echo ""
+                echo "Remaining images:"
+                docker images
+                echo ""
+                echo "Remaining volumes:"
+                docker volume ls
+                echo ""
+                echo "✅ DEEP CLEANUP COMPLETED (jenkins-jenkins preserved)"
             '''
         }
     }
