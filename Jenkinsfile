@@ -144,7 +144,7 @@ OPENAI_API_KEY=${OPENAI_API_KEY}
 # ==================== AWS S3 ====================
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-AWS_REGION=eu-north-1
+AWS_REGION=eu-west-1
 AWS_S3_BUCKET=${AWS_S3_BUCKET}
 
 # ==================== Google OAuth2 ====================
@@ -316,7 +316,7 @@ OPENAI_API_KEY=${OPENAI_API_KEY}
 # ==================== AWS S3 ====================
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-AWS_REGION=eu-north-1
+AWS_REGION=eu-west-1
 AWS_S3_BUCKET=${AWS_S3_BUCKET}
 
 # ==================== Google OAuth2 ====================
