@@ -195,11 +195,11 @@ EOF
                     sh '''
                         # הרץ את כל השירותים וחכה שיהיו healthy
                         echo "⏳ Starting services and waiting for health checks..."
-                        docker-compose -f docker-compose.test.yml up -d postgres redis qdrant backend frontend nginx
+                        docker-compose -f docker-compose.test.yml up postgres redis qdrant backend frontend nginx
                         
                         # חכה שהבקנד יהיה healthy (docker-compose עושה את זה בשבילנו!)
                         echo "⏳ Waiting for backend to be healthy..."
-                        docker-compose -f docker-compose.test.yml up -d --wait backend
+                        docker-compose -f docker-compose.test.yml up --wait backend
                         
                         if [ $? -eq 0 ]; then
                             echo "✅ Backend is healthy and ready!"
