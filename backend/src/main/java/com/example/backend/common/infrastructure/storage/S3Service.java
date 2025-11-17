@@ -37,7 +37,7 @@ public class S3Service {
     @Value("${aws.s3.secret-key}")
     private String secretKey;
 
-    @Value("${aws.s3.region:us-east-1}")
+    @Value("${aws.s3.region:eu-west-1}")
     private String region;
 
     @Value("${aws.s3.bucket-name}")
@@ -141,7 +141,7 @@ public class S3Service {
             log.error("💡 Example .env file:");
             log.error("   AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE");
             log.error("   AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
-            log.error("   AWS_REGION=us-east-1");
+            log.error("   AWS_REGION=eu-west-1");
             log.error("   AWS_S3_BUCKET=my-bucket-name");
 
             throw new IllegalStateException("S3 configuration is invalid. Missing or incorrect AWS credentials.");
