@@ -219,7 +219,7 @@ This project is created for portfolio purposes.
 ---
 
 <div align="center">
-  <p><strong>Built with ❤️ by Ester Ovrani</strong></p>
+  <p><strong>Built by Ester Ovrani</strong></p>
   <p>
     <a href="https://smart-document-chat.com">🌐 Visit Live Site</a>
   </p>
